@@ -1,5 +1,5 @@
 [project]
-name = "pyxie"
+name = "pyx2"
 version = "0.1.0"
 description = "Create flexible websites with markdown content and FastHTML layouts - no design constraints"
 readme = "README.md"
