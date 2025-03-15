@@ -42,6 +42,7 @@ SortKeyFunc = Callable[[T], Any]
 # Constants
 TAGS_FIELD = "tags"
 DATE_FORMATS = ["%Y-%m-%d", "%Y-%m-%d %H:%M:%S"]
+DEFAULT_PER_PAGE = 20
 
 # Supported comparison operators
 COMPARISON_OPERATORS = {
@@ -136,18 +137,23 @@ class Paginator:
     @staticmethod
     def offset_pagination(items: List[T], offset: int, limit: Optional[int]) -> Tuple[List[T], int, Optional[int]]:
         """Apply offset-based pagination to items."""
-        if not offset and limit is None:
-            return items, 1, None
+        if not offset and limit is None:            
+            return items, 1, len(items) if items else DEFAULT_PER_PAGE
             
         start = max(0, offset)
         end = None if limit is None else start + limit
         paginated_items = items[start:end]
         
         page = 1
-        per_page = None
+        per_page = limit  # Use limit as per_page
         if limit is not None and offset:
             per_page = limit
             page = (offset // per_page) + 1
+        elif limit is None and offset:            
+            per_page = DEFAULT_PER_PAGE
+            page = (offset // per_page) + 1
+                    
+        per_page = per_page if per_page is not None else DEFAULT_PER_PAGE
             
         return paginated_items, page, per_page
     
@@ -414,8 +420,15 @@ class Query(Generic[T]):
                 sorted_items, 
                 self._offset, 
                 self._limit
-            )
-            
+            )            
+        if per_page is None:
+            if self._limit:
+                per_page = self._limit
+            elif len(paginated_items) > 0:
+                per_page = len(paginated_items)
+            else:
+                per_page = DEFAULT_PER_PAGE
+                
         return QueryResult(
             items=paginated_items,
             total=total,
