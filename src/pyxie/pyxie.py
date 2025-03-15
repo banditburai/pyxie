@@ -220,6 +220,10 @@ class Pyxie:
             tag_counter.items(), key=lambda x: (-x[1], x[0])
         )}
     
+    def get_all_tags(self, collection: Optional[str] = None) -> List[str]:
+        """Get a simple list of all unique tags."""       
+        return list(self.get_tags(collection).keys())
+    
     def invalidate_cache(
         self,
         collection: Optional[str] = None,
