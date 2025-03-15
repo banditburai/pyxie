@@ -392,11 +392,12 @@ class Query(Generic[T]):
         """Apply sorting to items and return sorted items."""
         if not self._sort_keys:
             return items
-        
-        return sorted(items, key=lambda item: tuple(
-            (key_func(item), not reverse) if reverse else (key_func(item), reverse)
-            for key_func, reverse in self._sort_keys
-        ))
+                
+        result = items.copy()    
+        for key_func, reverse in reversed(self._sort_keys):
+            result = sorted(result, key=key_func, reverse=reverse)
+            
+        return result
     
     def execute(self) -> QueryResult[T]:
         """Execute query and return results."""
