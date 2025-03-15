@@ -174,6 +174,8 @@ class Query(Generic[T]):
 
     def _add_operator_filter(self, field: str, op: str, value: Any) -> None:
         """Add a filter with an operator (e.g., field__gte=value)."""
+        if value is None:
+            return        
         if op == CONTAINS_OP:
             self._add_contains_filter(field, value)
         elif op == IN_OP:
@@ -184,13 +186,25 @@ class Query(Generic[T]):
             log(logger, "Query", "warning", "filter", f"Unknown operator: {op}")
         
     def _add_contains_filter(self, field: str, value: Any) -> None:
-        """Add contains filter for collections."""
+        """Add contains filter for collections."""        
+        if value is None:
+            return
+            
         # Special case for tags field
         if field == TAGS_FIELD:
             def filter_fn(item: T) -> bool:
+                tags = getattr(item, 'tags', None)
+                if not tags:  # Handles None and empty sequences
+                    return False
                 if isinstance(value, str):
-                    return value in item.tags
-                return all(tag in item.tags for tag in value)
+                    normalized_value = value.replace("-", " ").lower()
+                    return any(tag.lower() == normalized_value for tag in tags)
+                # Explicit handling for collections
+                elif isinstance(value, (list, tuple, set)):
+                    return all(tag in tags for tag in value)
+                # Fallback
+                return False
+            
             self._filters.append(filter_fn)
             return
         
