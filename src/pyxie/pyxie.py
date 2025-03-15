@@ -16,29 +16,35 @@
 
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Any, Tuple, List, Union
+from typing import Dict, Optional, Any, Tuple, List, Union, Callable, TypeVar, cast
+from collections import Counter
+import math
+from functools import partial
 
 from .constants import DEFAULT_METADATA
 from .types import ContentItem, PathLike
 from .query import Query, QueryResult
 from .cache import Cache
 from .utilities import log, load_content_file, normalize_tags
-from collections import Counter
 from .collection import Collection
 
 logger = logging.getLogger(__name__)
 
-def apply_pagination(query: Query, page: Optional[int], per_page: Optional[int], 
-                   offset: Optional[int], limit: Optional[int]) -> Query:
-    """Apply pagination parameters to a query."""
-    if page is not None and per_page is not None:
-        return query.page(page, per_page)
+# Constants
+DEFAULT_PER_PAGE = 20
+DEFAULT_CURSOR_LIMIT = 10
+
+Q = TypeVar('Q', bound=Query)
+
+def apply_pagination(query: Q, page: Optional[int], per_page: Optional[int], 
+                   offset: Optional[int], limit: Optional[int]) -> Q:
+    """Apply pagination parameters to a query."""    
+    if page is not None:
+        # Use consistent default per_page value
+        return query.page(page, per_page or DEFAULT_PER_PAGE)
     
-    if offset:
-        query = query.offset(offset)
-    if limit:
-        query = query.limit(limit)
-    return query
+    # Apply offset and limit if provided, otherwise return the query as is
+    return query.offset(offset or 0).limit(limit) if offset or limit else query
 
 class Pyxie:
     """Main class for content management and rendering."""
@@ -131,8 +137,7 @@ class Pyxie:
         next_index = len(self._items)
         
         for path in collection.path.glob("**/*.md"):
-            item = load_content_file(path, collection.default_metadata, logger)
-            if item:
+            if item := load_content_file(path, collection.default_metadata, logger):
                 self._process_content_item(item, next_index, collection)
                 next_index += 1
     
@@ -140,18 +145,50 @@ class Pyxie:
         """Get items from a specific collection or all items."""
         if not collection:
             return list(self._items.values())
-        return list(self._collections.get(collection, {})._items.values())
+        
+        collection_items = self._collections.get(collection, {})._items
+        return list(collection_items.values())
     
-    def _apply_filters(self, query: Query, filters: Dict[str, Any]) -> Query:
+    def _apply_filters(self, query: Q, filters: Dict[str, Any]) -> Q:
         """Apply filters to a query."""
         return query.filter(**filters) if filters else query
     
-    def _apply_sorting(self, query: Query, order: Any) -> Query:
+    def _apply_sorting(self, query: Q, order: Any) -> Q:
         """Apply sorting to a query."""
         if not order:
             return query
+            
+        # Convert string to list for consistent handling
         order_fields = [order] if isinstance(order, str) else order
         return query.order_by(*order_fields)
+    
+    # Define pagination methods as class methods for better reuse
+    @staticmethod
+    def _cursor_pagination(
+        query: Q, 
+        cursor_field: str, 
+        cursor_value: Any, 
+        limit: Optional[int], 
+        direction: str
+    ) -> Q:
+        """Apply cursor-based pagination."""
+        return query.cursor(
+            cursor_field,
+            cursor_value,
+            limit or DEFAULT_CURSOR_LIMIT,
+            direction
+        )
+        
+    @staticmethod
+    def _offset_pagination(
+        query: Q, 
+        page: Optional[int], 
+        per_page: Optional[int], 
+        offset: Optional[int], 
+        limit: Optional[int]
+    ) -> Q:
+        """Apply offset-based pagination."""
+        return apply_pagination(query, page, per_page, offset, limit)
     
     def get_items(
         self,
@@ -164,34 +201,27 @@ class Pyxie:
         if not items:
             return QueryResult(items=[], total=0)
             
-        # Extract special parameters
+        # Extract special parameters with walrus operator (Python 3.8+)
         order = filters.pop("order_by", None)
         limit = filters.pop("limit", None)
         offset = filters.pop("offset", None)
-        page = filters.pop("page", None)
-        per_page = filters.pop("per_page", None)
+        page = max(1, int(page)) if (page := filters.pop("page", None)) is not None else None
+        per_page = max(1, int(per_page)) if (per_page := filters.pop("per_page", None)) is not None else None
         
-        # For cursor-based pagination
+        # Extract cursor pagination parameters
         cursor_field = filters.pop("cursor_field", None)
         cursor_value = filters.pop("cursor_value", None)
-        cursor_limit = filters.pop("cursor_limit", None)
+        cursor_limit = filters.pop("cursor_limit", None) or limit
         cursor_direction = filters.pop("cursor_direction", "forward")
         
-        # Build query
-        query = Query(items)
-        query = self._apply_filters(query, filters)
-        query = self._apply_sorting(query, order)
+        # Build query with method chaining - type cast for better typing
+        query = cast(Query, self._apply_sorting(self._apply_filters(Query(items), filters), order))
         
-        # Apply pagination - prefer cursor if specified
+        # Choose pagination method based on parameters
         if cursor_field:
-            query = query.cursor(
-                cursor_field, 
-                cursor_value, 
-                cursor_limit or limit or 10, 
-                cursor_direction
-            )
+            query = self._cursor_pagination(query, cursor_field, cursor_value, cursor_limit, cursor_direction)
         else:
-            query = apply_pagination(query, page, per_page, offset, limit)
+            query = self._offset_pagination(query, page, per_page, offset, limit)
                 
         return query.execute()
     
@@ -251,9 +281,9 @@ class Pyxie:
         try:
             if collection and slug:
                 # Invalidate specific item
-                item = self._items.get(slug)
-                if item and item.source_path:
-                    self.cache.invalidate(collection, item.source_path)
+                if item := self._items.get(slug):
+                    if item.source_path:
+                        self.cache.invalidate(collection, item.source_path)
             elif collection:
                 # Invalidate entire collection
                 self.cache.invalidate(collection)
@@ -265,7 +295,8 @@ class Pyxie:
     
     def get_raw_content(self, slug: str, **kwargs) -> Optional[str]:
         """Get raw markdown content for a post by slug."""
-        if not (item := self.get_item(slug, **kwargs)[0]) or not item.source_path:
+        item_result = self.get_item(slug, **kwargs)
+        if not (item := item_result[0]) or not item.source_path:
             return None
             
         try:

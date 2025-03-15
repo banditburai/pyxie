@@ -628,7 +628,7 @@ wheels = [
 ]
 
 [[package]]
-name = "pyxie"
+name = "pyx2"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

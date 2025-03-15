@@ -25,6 +25,7 @@ import logging
 from typing import Any, List, Optional, Sequence, TypeVar, Generic, Callable, Dict, Union, Tuple, Protocol, Collection
 from datetime import datetime
 from dataclasses import dataclass
+import math
 
 from .types import ContentItem
 from .utilities import log
@@ -87,20 +88,18 @@ class QueryResult(Generic[T]):
     page: int = 1
     per_page: Optional[int] = None
     
-    def __iter__(self):
+    def __iter__(self) -> Any:
         """Make QueryResult iterable over its items."""
         return iter(self.items)
         
-    def __len__(self):
+    def __len__(self) -> int:
         """Return number of items in current page."""
         return len(self.items)
     
     @property
     def has_next(self) -> bool:
         """Whether there are more pages."""
-        if not self.per_page:
-            return False
-        return self.total > self.page * self.per_page
+        return self.per_page and self.per_page > 0 and self.page < self.pages
     
     @property
     def has_prev(self) -> bool:
@@ -110,18 +109,21 @@ class QueryResult(Generic[T]):
     @property
     def pages(self) -> int:
         """Total number of pages."""
-        if not self.per_page or self.per_page <= 0:
+        # Early return for invalid pagination parameters
+        if not (self.per_page and self.per_page > 0 and self.total > 0):
             return 1
-        return (self.total + self.per_page - 1) // self.per_page
+        return math.ceil(self.total / self.per_page)
 
     @property
     def pagination(self) -> PaginationInfo:
-        """Get comprehensive pagination information."""
+        """Get comprehensive pagination information."""        
+        effective_per_page = max(1, self.per_page or len(self.items))
+        
         return PaginationInfo(
             current_page=self.page,
             total_pages=self.pages,
             total_items=self.total,
-            per_page=self.per_page or len(self.items),
+            per_page=effective_per_page,
             has_next=self.has_next,
             has_previous=self.has_prev,
             next_page=self.page + 1 if self.has_next else None,
