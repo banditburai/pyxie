@@ -417,4 +417,41 @@ def parse_html_fragment(content_html: str) -> Any:
 
 def format_error_html(error_type: str, error_msg: str) -> str:
     """Format an error message as HTML for display."""
-    return f'<div class="pyxie-error">Error {error_type} content: {error_msg}</div>' 
+    return f'<div class="pyxie-error">Error {error_type} content: {error_msg}</div>'
+
+def build_pagination_urls(
+    base_url: str,
+    pagination: Any,
+    tag: Optional[str] = None,
+    params: Optional[Dict[str, str]] = None
+) -> Dict[str, str]:
+    """Generate pagination URLs based on pagination info."""
+    # Early return for single-page results
+    if pagination.total_pages <= 1:
+        return {"current": base_url}
+    
+    # Build URL with parameters
+    def build_url(page: Optional[int]) -> str:
+        if page is None or page < 1 or page > pagination.total_pages:
+            return base_url
+            
+        url_params = {**(params or {})}
+        if page > 1:
+            url_params['page'] = str(page)
+        if tag:
+            url_params['tag'] = tag
+            
+        if not url_params:
+            return base_url
+            
+        return f"{base_url}?{'&'.join(f'{k}={v}' for k, v in url_params.items())}"
+    
+    # Build navigation URLs    
+    return {
+        "current": build_url(pagination.current_page),
+        "next": build_url(pagination.next_page),
+        "prev": build_url(pagination.previous_page),
+        "first": build_url(1),
+        "last": build_url(pagination.total_pages),
+        "pages": {p: build_url(p) for p in pagination.page_range()}
+    } 

@@ -22,9 +22,8 @@ This module provides a flexible query interface for content items, supporting:
 """
 
 import logging
-from typing import Any, List, Optional, Sequence, TypeVar, Generic, Callable, Dict, Union, Tuple
+from typing import Any, List, Optional, Sequence, TypeVar, Generic, Callable, Dict, Union, Tuple, Protocol, Collection
 from datetime import datetime
-from operator import attrgetter
 from dataclasses import dataclass
 
 from .types import ContentItem
@@ -37,7 +36,7 @@ T = TypeVar("T", bound=ContentItem)
 # Type aliases for clarity
 FilterFunc = Callable[[T], bool]
 ValueFunc = Callable[[T], Any]
-PredicateFunc = Callable[[Any, Any], bool]
+SortKeyFunc = Callable[[T], Any]
 
 # Constants
 TAGS_FIELD = "tags"
@@ -53,9 +52,32 @@ COMPARISON_OPERATORS = {
     "ne": lambda a, b: a != b,
 }
 
-# Special operators and their handlers
+# Special operators
 CONTAINS_OP = "contains"
 IN_OP = "in"
+
+@dataclass
+class PaginationInfo:
+    """Detailed pagination information."""
+    current_page: int
+    total_pages: int
+    total_items: int
+    per_page: int
+    has_next: bool
+    has_previous: bool
+    next_page: Optional[int]
+    previous_page: Optional[int]
+    
+    def page_range(self, window: int = 5) -> Sequence[int]:
+        """Return page numbers centered around current page."""
+        if self.total_pages <= 1:
+            return [1] if self.total_pages == 1 else []
+            
+        half = window // 2
+        start = max(1, self.current_page - half)
+        end = min(self.total_pages, start + window - 1)
+        start = max(1, end - window + 1)  # Adjust start if near end
+        return range(start, end + 1)
 
 @dataclass
 class QueryResult(Generic[T]):
@@ -88,15 +110,166 @@ class QueryResult(Generic[T]):
     @property
     def pages(self) -> int:
         """Total number of pages."""
-        if not self.per_page:
+        if not self.per_page or self.per_page <= 0:
             return 1
         return (self.total + self.per_page - 1) // self.per_page
 
-def get_item_value(item: ContentItem, field: str) -> Any:
-    """Get value from item attribute or metadata."""
-    if hasattr(item, field):
-        return getattr(item, field)
-    return item.metadata.get(field)
+    @property
+    def pagination(self) -> PaginationInfo:
+        """Get comprehensive pagination information."""
+        return PaginationInfo(
+            current_page=self.page,
+            total_pages=self.pages,
+            total_items=self.total,
+            per_page=self.per_page or len(self.items),
+            has_next=self.has_next,
+            has_previous=self.has_prev,
+            next_page=self.page + 1 if self.has_next else None,
+            previous_page=self.page - 1 if self.has_prev else None
+        )
+
+class Paginator:
+    """Handles different pagination strategies."""
+    
+    @staticmethod
+    def offset_pagination(items: List[T], offset: int, limit: Optional[int]) -> Tuple[List[T], int, Optional[int]]:
+        """Apply offset-based pagination to items."""
+        if not offset and limit is None:
+            return items, 1, None
+            
+        start = max(0, offset)
+        end = None if limit is None else start + limit
+        paginated_items = items[start:end]
+        
+        page = 1
+        per_page = None
+        if limit is not None and offset:
+            per_page = limit
+            page = (offset // per_page) + 1
+            
+        return paginated_items, page, per_page
+    
+    @staticmethod
+    def cursor_pagination(
+        items: List[T], 
+        field: str,
+        cursor_value: Any = None,
+        limit: int = 10,
+        direction: str = "forward"
+    ) -> List[T]:
+        """Paginate items using cursor-based approach."""
+        if not field or not items:
+            return items[:limit] if limit else items
+        
+        # Early return for initial page
+        if cursor_value is None:
+            if direction == "backward":
+                return items[-limit:] if limit < len(items) else items
+            return items[:limit]
+        
+        get_value = lambda item: getattr(item, field, None) or item.metadata.get(field)
+        is_forward = direction == "forward"
+        
+        if is_forward:
+            matches = [item for item in items if 
+                      (item_value := get_value(item)) is not None and
+                      item_value > cursor_value]
+            return matches[:limit]
+        else:
+            before_cursor = [item for item in items if 
+                           (item_value := get_value(item)) is not None and
+                           item_value < cursor_value]
+            
+            return before_cursor[-limit:] if len(before_cursor) > limit else before_cursor
+
+class FilterFactory:
+    """Factory for creating filter functions."""
+    
+    @staticmethod
+    def create_filter(field: str, predicate: Callable[[Any, Any], bool], value: Any) -> FilterFunc:
+        """Create a filter function with given field and predicate."""
+        def filter_fn(item: T) -> bool:
+            item_value = getattr(item, field, None) or item.metadata.get(field)
+            if item_value is None:
+                return False
+                    
+            try:
+                return predicate(item_value, value)
+            except (TypeError, ValueError):
+                return False
+                
+        return filter_fn
+    
+    @staticmethod
+    def create_exact_filter(field: str, value: Any) -> FilterFunc:
+        """Create a filter for exact matching."""
+        if isinstance(value, (list, tuple, set)):
+            return FilterFactory.create_filter(field, lambda item_val, val: item_val in val, value)
+        else:
+            return FilterFactory.create_filter(field, lambda item_val, val: item_val == val, value)
+    
+    @staticmethod
+    def create_tags_filter(value: Any) -> FilterFunc:
+        """Create a specialized filter for tags."""
+        def filter_fn(item: T) -> bool:
+            tags = getattr(item, 'tags', None)
+            if not tags:  # Handles None and empty sequences
+                return False
+                
+            if isinstance(value, str):
+                normalized_value = value.replace("-", " ").lower()
+                return any(tag.lower() == normalized_value for tag in tags)
+                
+            elif isinstance(value, (list, tuple, set)):
+                return all(tag in tags for tag in value)
+                
+            return False
+        
+        return filter_fn
+    
+    @staticmethod
+    def create_contains_filter(field: str, value: Any) -> FilterFunc:
+        """Create a filter for 'contains' operation."""
+        if value is None:
+            return lambda _: False
+            
+        if field == TAGS_FIELD:
+            return FilterFactory.create_tags_filter(value)
+        
+        if isinstance(value, (list, tuple, set)):
+            return FilterFactory.create_filter(
+                field, lambda item_val, val: all(v in item_val for v in val), value
+            )
+        else:
+            return FilterFactory.create_filter(
+                field, lambda item_val, val: val in item_val, value
+            )
+    
+    @staticmethod
+    def create_in_filter(field: str, value: Any) -> FilterFunc:
+        """Create a filter for 'in' operation."""
+        try:
+            iter(value)
+            return FilterFactory.create_filter(field, lambda item_val, val: item_val in val, value)
+        except (TypeError, ValueError):
+            log(logger, "Query", "warning", "filter", 
+                f"Value for 'in' operator must be iterable: {value}")
+            return lambda _: False
+    
+    @staticmethod
+    def create_comparison_filter(field: str, op: str, value: Any) -> FilterFunc:
+        """Create a filter for comparison operations."""
+        if op not in COMPARISON_OPERATORS:
+            log(logger, "Query", "warning", "filter", f"Unknown operator: {op}")
+            return lambda _: False
+            
+        try:
+            norm_value = normalize_value(value)
+            return FilterFactory.create_filter(field, COMPARISON_OPERATORS[op], norm_value)
+        except (TypeError, ValueError):
+            log(logger, "Query", "warning", "filter", 
+                f"Invalid comparison value for {field} {op} {value}")
+            return lambda _: False
 
 def normalize_value(value: Any) -> Any:
     """Normalize value for comparison."""
@@ -126,134 +299,52 @@ class Query(Generic[T]):
         """Initialize query with sequence of items."""
         self._items = list(items)
         self._filters: List[FilterFunc] = []
-        self._order_by: List[ValueFunc] = []
-        self._reverse = False
+        self._sort_keys: List[Tuple[SortKeyFunc, bool]] = []  # (key_func, reverse)
         self._offset = 0
         self._limit: Optional[int] = None
+        # Cursor pagination fields
+        self._use_cursor = False
+        self._cursor_field: Optional[str] = None
+        self._cursor_value: Any = None
+        self._cursor_limit: Optional[int] = None
+        self._cursor_direction: str = "forward"
     
     def filter(self, **kwargs) -> "Query[T]":
         """Add filters to query."""
         for key, value in kwargs.items():
-            if op_parts := key.split("__", 1) if "__" in key else None:
-                field, op = op_parts
+            if value is None:
+                continue
+                
+            if "__" in key:
+                field, op = key.split("__", 1)
                 self._add_operator_filter(field, op, value)
             else:
-                self._add_exact_filter(key, value)
+                self._filters.append(FilterFactory.create_exact_filter(key, value))
         return self
-    
-    def _create_filter(self, field: str, predicate: PredicateFunc, value: Any) -> FilterFunc:
-        """Create a filter function with given field and predicate."""
-        def filter_fn(item: T) -> bool:
-            item_value = get_item_value(item, field)
-            if item_value is None:
-                return False
-                
-            try:
-                return predicate(item_value, value)
-            except (TypeError, ValueError):
-                return False
-                
-        return filter_fn
-    
-    def _add_exact_filter(self, field: str, value: Any) -> None:
-        """Add exact match filter."""
-        if isinstance(value, (list, tuple, set)):
-            # Value is a collection - check if item's value is in this collection
-            predicate = lambda item_val, val: item_val in val
-        else:
-            # Simple equality check
-            predicate = lambda item_val, val: item_val == val
-            
-        self._filters.append(self._create_filter(field, predicate, value))
-    
-    def _create_iterable_predicate(self, all_match: bool = False) -> PredicateFunc:
-        """Create a predicate for working with iterables."""
-        if all_match:
-            return lambda item_val, val: all(v in item_val for v in val)
-        return lambda item_val, val: val in item_val
 
     def _add_operator_filter(self, field: str, op: str, value: Any) -> None:
-        """Add a filter with an operator (e.g., field__gte=value)."""
-        if value is None:
-            return        
+        """Add a filter with an operator."""
         if op == CONTAINS_OP:
-            self._add_contains_filter(field, value)
+            self._filters.append(FilterFactory.create_contains_filter(field, value))
         elif op == IN_OP:
-            self._add_in_filter(field, value)
+            self._filters.append(FilterFactory.create_in_filter(field, value))
         elif op in COMPARISON_OPERATORS:
-            self._add_comparison_filter(field, op, value)
+            self._filters.append(FilterFactory.create_comparison_filter(field, op, value))
         else:
             log(logger, "Query", "warning", "filter", f"Unknown operator: {op}")
-        
-    def _add_contains_filter(self, field: str, value: Any) -> None:
-        """Add contains filter for collections."""        
-        if value is None:
-            return
-            
-        # Special case for tags field
-        if field == TAGS_FIELD:
-            def filter_fn(item: T) -> bool:
-                tags = getattr(item, 'tags', None)
-                if not tags:  # Handles None and empty sequences
-                    return False
-                if isinstance(value, str):
-                    normalized_value = value.replace("-", " ").lower()
-                    return any(tag.lower() == normalized_value for tag in tags)
-                # Explicit handling for collections
-                elif isinstance(value, (list, tuple, set)):
-                    return all(tag in tags for tag in value)
-                # Fallback
-                return False
-            
-            self._filters.append(filter_fn)
-            return
-        
-        # For other fields, create a contains filter
-        predicate = (
-            self._create_iterable_predicate(all_match=True) 
-            if isinstance(value, (list, tuple, set))
-            else self._create_iterable_predicate()
-        )
-        self._filters.append(self._create_filter(field, predicate, value))
-    
-    def _add_in_filter(self, field: str, value: Any) -> None:
-        """Add a filter for 'in' operation (field__in=[val1, val2])."""
-        try:
-            # Value must be iterable
-            iter(value)
-            self._filters.append(self._create_filter(field, lambda item_val, val: item_val in val, value))
-        except (TypeError, ValueError):
-            log(logger, "Query", "warning", "filter", 
-                f"Value for 'in' operator must be iterable: {value}")
-    
-    def _add_comparison_filter(self, field: str, op: str, value: Any) -> None:
-        """Add a comparison filter (lt, gt, etc.)."""
-        try:
-            # Try to normalize and compare with the base value
-            norm_value = normalize_value(value)
-            self._filters.append(self._create_filter(field, COMPARISON_OPERATORS[op], norm_value))
-        except (TypeError, ValueError):
-            log(logger, "Query", "warning", "filter", 
-                f"Invalid comparison value for {field} {op} {value}")
     
     def order_by(self, *fields: str) -> "Query[T]":
         """Add sorting to query."""
-        self._order_by = []
-        last_reverse = False
+        self._sort_keys = []
+        
+        def make_key_func(field_name):
+            return lambda item: getattr(item, field_name, None) or item.metadata.get(field_name)
         
         for field in fields:
             reverse = field.startswith("-")
-            if reverse:
-                field = field[1:]
-                
-            def get_value(item: T, f=field) -> Any:
-                return get_item_value(item, f)
-                
-            self._order_by.append(get_value)
-            last_reverse = reverse
+            actual_field = field[1:] if reverse else field
+            self._sort_keys.append((make_key_func(actual_field), reverse))
             
-        # Use the last field's direction as the overall direction
-        self._reverse = last_reverse  
         return self
     
     def offset(self, n: int) -> "Query[T]":
@@ -268,52 +359,63 @@ class Query(Generic[T]):
     
     def page(self, page: int, per_page: int) -> "Query[T]":
         """Get specific page of results."""
+        page = max(1, page)
+        per_page = max(1, per_page)
         self._offset = (page - 1) * per_page
         self._limit = per_page
         return self
     
+    def cursor(self, field: str, value: Any = None, limit: int = 10, direction: str = "forward") -> "Query[T]":
+        """Set up cursor-based pagination."""
+        self._use_cursor = True
+        self._cursor_field = field
+        self._cursor_value = value
+        self._cursor_limit = max(1, limit) if limit is not None else None
+        self._cursor_direction = direction if direction in ("forward", "backward") else "forward"
+        return self
+    
     def _apply_filters(self, items: List[T]) -> List[T]:
         """Apply filters to items and return filtered items."""
-        for filter_fn in self._filters:
-            items = [item for item in items if filter_fn(item)]
-        return items
+        if not self._filters:
+            return items
+        return [item for item in items if all(f(item) for f in self._filters)]
         
     def _apply_sorting(self, items: List[T]) -> List[T]:
         """Apply sorting to items and return sorted items."""
-        if not self._order_by:
+        if not self._sort_keys:
             return items
-            
-        # Create a single key function for more efficient sorting
-        key_fn = lambda item: tuple(fn(item) for fn in self._order_by)
-        return sorted(items, key=key_fn, reverse=self._reverse)
-    
-    def _apply_pagination(self, items: List[T], total: int) -> Tuple[List[T], int, Optional[int]]:
-        """Apply pagination and return (items, page, per_page)."""
-        if self._offset or self._limit is not None:
-            start = self._offset
-            end = None if self._limit is None else start + self._limit
-            items = items[start:end]
         
-        # Calculate page info
-        page = 1
-        per_page = None
-        if self._limit is not None and self._offset:
-            per_page = self._limit
-            page = (self._offset // per_page) + 1
-            
-        return items, page, per_page
+        return sorted(items, key=lambda item: tuple(
+            (key_func(item), not reverse) if reverse else (key_func(item), reverse)
+            for key_func, reverse in self._sort_keys
+        ))
     
     def execute(self) -> QueryResult[T]:
         """Execute query and return results."""
-        # Process the items through the pipeline
-        items = self._apply_filters(self._items)
-        total = len(items)
+        filtered_items = self._apply_filters(self._items)
+        total = len(filtered_items)
         
-        items = self._apply_sorting(items)
-        items, page, per_page = self._apply_pagination(items, total)
+        sorted_items = self._apply_sorting(filtered_items)
+        
+        if self._use_cursor:
+            paginated_items = Paginator.cursor_pagination(
+                sorted_items,
+                self._cursor_field,
+                self._cursor_value,
+                self._cursor_limit,
+                self._cursor_direction
+            )
+            page = 1
+            per_page = self._cursor_limit
+        else:
+            paginated_items, page, per_page = Paginator.offset_pagination(
+                sorted_items, 
+                self._offset, 
+                self._limit
+            )
             
         return QueryResult(
-            items=items,
+            items=paginated_items,
             total=total,
             page=page,
             per_page=per_page

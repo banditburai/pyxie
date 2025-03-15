@@ -23,6 +23,7 @@ from .types import ContentItem, PathLike
 from .query import Query, QueryResult
 from .cache import Cache
 from .utilities import log, load_content_file, normalize_tags
+from collections import Counter
 from .collection import Collection
 
 logger = logging.getLogger(__name__)
@@ -30,12 +31,14 @@ logger = logging.getLogger(__name__)
 def apply_pagination(query: Query, page: Optional[int], per_page: Optional[int], 
                    offset: Optional[int], limit: Optional[int]) -> Query:
     """Apply pagination parameters to a query."""
-    # Page-based pagination takes precedence
     if page is not None and per_page is not None:
         return query.page(page, per_page)
     
-    # Apply offset and limit using function composition
-    return (query.offset(offset) if offset else query).limit(limit) if limit else query
+    if offset:
+        query = query.offset(offset)
+    if limit:
+        query = query.limit(limit)
+    return query
 
 class Pyxie:
     """Main class for content management and rendering."""
@@ -135,11 +138,9 @@ class Pyxie:
     
     def _get_collection_items(self, collection: Optional[str]) -> List[ContentItem]:
         """Get items from a specific collection or all items."""
-        if collection:
-            if collection not in self._collections:
-                return []
-            return list(self._collections[collection]._items.values())
-        return list(self._items.values())
+        if not collection:
+            return list(self._items.values())
+        return list(self._collections.get(collection, {})._items.values())
     
     def _apply_filters(self, query: Query, filters: Dict[str, Any]) -> Query:
         """Apply filters to a query."""
@@ -170,11 +171,27 @@ class Pyxie:
         page = filters.pop("page", None)
         per_page = filters.pop("per_page", None)
         
+        # For cursor-based pagination
+        cursor_field = filters.pop("cursor_field", None)
+        cursor_value = filters.pop("cursor_value", None)
+        cursor_limit = filters.pop("cursor_limit", None)
+        cursor_direction = filters.pop("cursor_direction", "forward")
+        
         # Build query
         query = Query(items)
         query = self._apply_filters(query, filters)
         query = self._apply_sorting(query, order)
-        query = apply_pagination(query, page, per_page, offset, limit)
+        
+        # Apply pagination - prefer cursor if specified
+        if cursor_field:
+            query = query.cursor(
+                cursor_field, 
+                cursor_value, 
+                cursor_limit or limit or 10, 
+                cursor_direction
+            )
+        else:
+            query = apply_pagination(query, page, per_page, offset, limit)
                 
         return query.execute()
     
@@ -209,8 +226,6 @@ class Pyxie:
         """Get tag usage counts."""
         items = self._get_collection_items(collection)
         
-        # Count tags using Counter
-        from collections import Counter
         tag_counter = Counter()
         for item in items:
             tag_counter.update(item.tags)
@@ -221,8 +236,8 @@ class Pyxie:
         )}
     
     def get_all_tags(self, collection: Optional[str] = None) -> List[str]:
-        """Get a simple list of all unique tags."""       
-        return list(self.get_tags(collection).keys())
+        """Get a simple list of all unique tags."""
+        return list(self.get_tags(collection))
     
     def invalidate_cache(
         self,
@@ -245,7 +260,7 @@ class Pyxie:
             else:
                 # Invalidate everything
                 self.cache.invalidate()
-        except Exception as e:
+        except (IOError, OSError) as e:
             log(logger, "Pyxie", "error", "cache", f"Failed to invalidate cache: {e}")
     
     def get_raw_content(self, slug: str, **kwargs) -> Optional[str]:
