@@ -30,8 +30,7 @@ from .layouts import get_layout
 from .slots import fill_slots
 from .errors import RenderError
 from .fasthtml import (
-    render_to_xml,
-    FastHTMLError
+    process_fasthtml_in_content
 )
 from .utilities import (
     log, 
@@ -91,16 +90,11 @@ class PyxieHTMLRenderer(HTMLRenderer):
 
 def process_fasthtml(content: str) -> str:
     """Process FastHTML blocks in content."""
-    fasthtml_pattern = re.compile(r'<fasthtml[^>]*>.*?</fasthtml>', re.DOTALL)
-    
-    def replace_fasthtml(match):
-        try:
-            return render_to_xml(match.group(0))
-        except FastHTMLError as e:
-            log(logger, "Renderer", "error", "fasthtml", f"Failed to render FastHTML: {e}")
-            return format_error_html("FastHTML", str(e))
-    
-    return fasthtml_pattern.sub(replace_fasthtml, content)
+    try:
+        return process_fasthtml_in_content(content)
+    except Exception as e:
+        log(logger, "Renderer", "error", "fasthtml", f"Failed to process FastHTML: {e}")
+        return format_error_html("FastHTML", str(e))
 
 def render_markdown(content: str) -> str:
     """Render markdown content to HTML."""

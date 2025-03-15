@@ -194,6 +194,9 @@ def fill_slots(layout: str | FT, blocks: Dict[str, List[str]]) -> SlotFillResult
     """Fill slots in a layout with rendered content."""
     try:
         root = extract_layout_root(layout)
+        if root is None:
+            return create_error_result(layout, ValueError("Failed to extract layout root element"))
+            
         return process_layout(root, blocks)
     except Exception as e:
         return create_error_result(layout, e)

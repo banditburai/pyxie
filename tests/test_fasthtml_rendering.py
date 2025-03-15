@@ -9,7 +9,7 @@ import pytest
 from typing import List, Tuple
 import logging
 
-from pyxie.fasthtml import render_to_xml
+from pyxie.fasthtml import render_fasthtml_block
 import fasthtml.common as ft_common
 
 # Add these components for the tests to work with ft_common namespace
@@ -26,7 +26,7 @@ def test_simple_component():
     content = """<fasthtml>
 show(Div("Hello World", cls="test-class"))
 </fasthtml>"""
-    result = render_to_xml(content)
+    result = render_fasthtml_block(content)
     assert "<div class=\"test-class\">Hello World</div>" in result
 
 
@@ -39,7 +39,7 @@ component = Div(
 )
 show(component)
 </fasthtml>"""
-    result = render_to_xml(content)
+    result = render_fasthtml_block(content)
     assert "<div class=\"outer\">" in result
     assert "<div class=\"inner\">Inner content</div>" in result
 
@@ -52,7 +52,7 @@ def MyComponent(text):
     
 show(MyComponent("Hello from function"))
 </fasthtml>"""
-    result = render_to_xml(content)
+    result = render_fasthtml_block(content)
     assert "<div class=\"custom\">Hello from function</div>" in result
 
 
@@ -65,7 +65,7 @@ component = Div(
 )
 show(component)
 </fasthtml>"""
-    result = render_to_xml(content)
+    result = render_fasthtml_block(content)
     assert "<div class=\"list-container\">" in result
     assert "<p class=\"item-0\">Item 0</p>" in result
     assert "<p class=\"item-1\">Item 1</p>" in result
@@ -89,7 +89,7 @@ gallery = Div(
 )
 show(gallery)
 </fasthtml>"""
-    result = render_to_xml(content)
+    result = render_fasthtml_block(content)
     assert "<div class=\"gallery\">" in result
     assert "<div class=\"card-style\">" in result
     assert "<img src=\"image1.jpg\" alt=\"Image 1\" class=\"img-style\">" in result
@@ -123,7 +123,7 @@ data = [
 
 show(BarChart(data))
 </fasthtml>"""
-    result = render_to_xml(content)
+    result = render_fasthtml_block(content)
     assert "<div class=\"chart\">" in result
     assert "<div class=\"bar-container\">" in result
     assert "<div class=\"bar\" style=\"width: " in result

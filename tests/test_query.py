@@ -183,32 +183,21 @@ class TestQuery:
             
     # Operator filter tests
     def test_filter_contains(self, query: Query):
-        """Test contains operator."""
-        # The implementation of the contains operator is not working as expected
-        # Let's test a simpler case that should work
+        """Test filtering with 'contains' operator.
         
-        # Create a new query with items that have a specific tag
-        items = []
-        for i in range(3):
-            item = create_content_item(f"test{i}", {
-                "title": f"Test {i}",
-                "tags": ["test-tag"]
-            })
-            items.append(item)
+        This test focuses on checking the behavior with list fields and text contains.
+        """
+        # List contains test - items with the tag "python"
+        python_items = query.filter(tags__contains="python").execute()
+        assert len(python_items.items) > 0
+        for item in python_items.items:
+            assert "python" in item.metadata["tags"]
         
-        test_query = Query(items)
-        
-        # This should match all items
-        result = test_query.filter(tags__contains="test-tag").execute()
-        
-        # Skip this test if the implementation doesn't work as expected
-        if len(result) == 0:
-            pytest.skip("Contains operator not working as expected")
-        else:
-            # If it works, verify the results
-            assert len(result) > 0
-            for item in result:
-                assert "test-tag" in item.metadata["tags"]
+        # Multiple contains criteria
+        multi_tag_items = query.filter(tags__contains=["python", "web"]).execute()
+        for item in multi_tag_items.items:
+            tags = item.metadata["tags"]
+            assert "python" in tags and "web" in tags
         
     def test_filter_in(self, query: Query):
         """Test in operator."""
@@ -404,12 +393,104 @@ class TestQuery:
         assert len(result) == 5  # No filtering applied
         
     def test_incomparable_values(self, query: Query):
-        """Test comparison with incomparable values."""
-        # Trying to compare incomparable types - should not raise an exception
-        try:
-            result = query.filter(title__gt=100).execute()
-            # If it doesn't raise an exception, it should return no results
-            assert len(result) == 0
-        except TypeError:
-            # If it raises a TypeError, that's acceptable too since we're testing invalid comparisons
-            pass 
+        """Test handling of incomparable values."""
+        # Should not raise exception even when values can't be compared
+        result = query.filter(views__gt="not-a-number").execute()
+        assert len(result.items) == 0
+    
+    def test_cursor_pagination(self, query: Query):
+        """Test cursor-based pagination behavior."""
+        # First, we'll test the basic cursor pagination functionality
+        all_items = query.execute().items
+        
+        # Test with a specific cursor field without a cursor value (initial page)
+        first_page = query.cursor(field="views", limit=2).execute()
+        assert len(first_page.items) <= 2
+        assert len(first_page.items) > 0  # Should at least return something
+        
+        # Get a cursor value from the first page
+        cursor_value = first_page.items[-1].metadata["views"]
+        
+        # Get the next page using this cursor value
+        second_page = query.cursor(field="views", value=cursor_value, limit=2).execute()
+        
+        # Items in the second page should not have the cursor value
+        for item in second_page.items:
+            assert item.metadata["views"] > cursor_value
+            
+        # Test with empty field - should return first N items
+        empty_field_result = query.cursor(field="", limit=2).execute()
+        assert len(empty_field_result.items) <= 2
+        
+        # Test with non-existent field
+        nonexistent_field = query.cursor(field="nonexistent_field", limit=2).execute()
+        assert len(nonexistent_field.items) <= 2
+        
+        # Test backward pagination from the start (without cursor value)
+        backward_from_start = query.cursor(field="views", direction="backward", limit=2).execute()
+        assert len(backward_from_start.items) <= 2
+        if len(backward_from_start.items) > 0:
+            # The items should be ordered by views in descending order when going backward
+            # So the first item should be the one with the highest views
+            highest_views = max(item.metadata["views"] for item in all_items)
+            assert any(item.metadata["views"] == highest_views for item in backward_from_start.items)
+        
+        # Test backward pagination with cursor value
+        high_value = max(item.metadata["views"] for item in all_items)
+        backward_page = query.cursor(
+            field="views", 
+            value=high_value, 
+            direction="backward", 
+            limit=2
+        ).execute()
+        
+        # Backward direction shouldn't include the cursor value
+        for item in backward_page.items:
+            assert item.metadata["views"] < high_value
+            
+        # Test with invalid direction (should default to forward)
+        invalid_dir_result = query.cursor(
+            field="views", 
+            direction="invalid",
+            limit=2
+        ).execute()
+        assert len(invalid_dir_result.items) <= 2
+        
+        # Test with empty items list
+        empty_query = Query([])
+        empty_result = empty_query.cursor(field="views", limit=2).execute()
+        assert len(empty_result.items) == 0
+
+class TestNormalizeValue:
+    """Tests for the normalize_value function."""
+    
+    def test_normalize_value(self):
+        """Test normalization of values for comparison."""
+        from pyxie.query import normalize_value
+        from datetime import datetime
+        
+        # Test with various types that should return unchanged
+        assert normalize_value(42) == 42
+        assert normalize_value(3.14) == 3.14
+        assert normalize_value(True) is True
+        assert normalize_value(datetime(2024, 1, 1)) == datetime(2024, 1, 1)
+        
+        # Test string to datetime conversion
+        dt_str = "2024-01-15"
+        result = normalize_value(dt_str)
+        assert isinstance(result, datetime)
+        assert result.year == 2024
+        assert result.month == 1
+        assert result.day == 15
+        
+        # Test numeric string conversion
+        assert normalize_value("42") == 42.0  # Converts to float
+        assert normalize_value("3.14") == 3.14
+        
+        # Test string that doesn't convert
+        assert normalize_value("not-a-number") == "not-a-number"
+        assert normalize_value("") == ""
+        
+        # Test with other types
+        assert normalize_value([1, 2, 3]) == [1, 2, 3]
+        assert normalize_value({"key": "value"}) == {"key": "value"} 

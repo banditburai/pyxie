@@ -32,7 +32,7 @@ from .utilities import log
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T", bound=ContentItem)
+T = TypeVar("T", bound=ContentItem, covariant=True)
 
 # Type aliases for clarity
 FilterFunc = Callable[[T], bool]
@@ -168,8 +168,7 @@ class Paginator:
         """Paginate items using cursor-based approach."""
         if not field or not items:
             return items[:limit] if limit else items
-        
-        # Early return for initial page
+                
         if cursor_value is None:
             if direction == "backward":
                 return items[-limit:] if limit < len(items) else items
@@ -196,7 +195,7 @@ class FilterFactory:
     @staticmethod
     def create_filter(field: str, predicate: Callable[[Any, Any], bool], value: Any) -> FilterFunc:
         """Create a filter function with given field and predicate."""
-        def filter_fn(item: T) -> bool:
+        def filter_fn(item: ContentItem) -> bool:
             item_value = getattr(item, field, None) or item.metadata.get(field)
             if item_value is None:
                 return False
@@ -219,7 +218,7 @@ class FilterFactory:
     @staticmethod
     def create_tags_filter(value: Any) -> FilterFunc:
         """Create a specialized filter for tags."""
-        def filter_fn(item: T) -> bool:
+        def filter_fn(item: ContentItem) -> bool:
             tags = getattr(item, 'tags', None)
             if not tags:  # Handles None and empty sequences
                 return False

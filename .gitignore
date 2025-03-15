@@ -11,3 +11,6 @@ wheels/
 .sesskey
 .DS_Store
 .python-version
+.pytest_cache
+htmlcov/
+.coverage

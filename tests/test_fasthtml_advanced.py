@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 from pyxie.fasthtml import (
-    render_to_xml, extract_inner_content, create_namespace,
+    render_fasthtml_block, parse_fasthtml_tag, create_namespace,
     safe_import, process_imports, py_to_js, js_function,
     is_fasthtml_content, protect_script_tags, FastHTMLError
 )
@@ -119,24 +119,28 @@ class TestContentManipulation:
         """Test extraction of inner content from FastHTML blocks."""
         # Basic extraction
         content = "<fasthtml>\ndef hello():\n    return 'Hello'\n</fasthtml>"
-        result = extract_inner_content(content)
-        assert result == "def hello():\n    return 'Hello'"
+        tag_match = parse_fasthtml_tag(content)
+        assert tag_match is not None
+        assert tag_match.content == "def hello():\n    return 'Hello'"
         
         # Handling indentation
         indented = """<fasthtml>
             def hello():
                 return 'Hello'
         </fasthtml>"""
-        result = extract_inner_content(indented)
-        assert result == "def hello():\n    return 'Hello'"
+        tag_match = parse_fasthtml_tag(indented)
+        assert tag_match is not None
+        assert tag_match.content == "def hello():\n    return 'Hello'"
         
         # Empty content
-        assert extract_inner_content("") == ""
-        assert extract_inner_content("<fasthtml></fasthtml>") == ""
+        assert parse_fasthtml_tag("") is None
+        empty_tag = parse_fasthtml_tag("<fasthtml></fasthtml>")
+        assert empty_tag is not None
+        assert empty_tag.content == ""
         
         # Non-FastHTML content
         plain = "def hello():\n    return 'Hello'"
-        assert extract_inner_content(plain) == plain
+        assert parse_fasthtml_tag(plain) is None
     
     def test_is_fasthtml_content(self):
         """Test detection of FastHTML content."""
@@ -275,7 +279,7 @@ app = Div(
 show(app)
 </fasthtml>"""
 
-        result = render_to_xml(content)
+        result = render_fasthtml_block(content)
         
         # Check outer structure
         assert '<div class="app-container">' in result
@@ -305,7 +309,7 @@ show(ConditionalComponent(True))
 show(ConditionalComponent(False))
 </fasthtml>"""
 
-        result = render_to_xml(content)
+        result = render_fasthtml_block(content)
         
         # Both conditions should be rendered
         assert '<div class="true-condition">Condition is True</div>' in result
@@ -325,7 +329,7 @@ button = Button(
 show(button)
 </fasthtml>"""
 
-        result = render_to_xml(content)
+        result = render_fasthtml_block(content)
         
         # Check that button and JavaScript are rendered
         assert '<button' in result
@@ -361,7 +365,7 @@ page = Div(
 show(page)
 </fasthtml>"""
 
-        result = render_to_xml(content, context_path=test_module_dir)
+        result = render_fasthtml_block(content, context_path=test_module_dir)
         
         # Check component rendering
         assert '<div class="page">' in result
@@ -383,7 +387,7 @@ def broken_function(
 </fasthtml>"""
 
         # Should not raise an exception but return error information
-        result = render_to_xml(content)
+        result = render_fasthtml_block(content)
         
         # Result should contain error information
         assert "Error:" in result
@@ -399,7 +403,7 @@ show(div_by_zero())
 </fasthtml>"""
 
         # Should not raise an exception but return error information
-        result = render_to_xml(content)
+        result = render_fasthtml_block(content)
         
         # Result should contain error information
         assert "Error:" in result
@@ -413,7 +417,7 @@ show(UndefinedComponent("This will fail"))
 </fasthtml>"""
 
         # Should not raise an exception but return error information
-        result = render_to_xml(content)
+        result = render_fasthtml_block(content)
         
         # Result should contain error information
         assert "Error:" in result

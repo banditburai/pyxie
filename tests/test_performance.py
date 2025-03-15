@@ -14,7 +14,7 @@ import statistics
 from pyxie.parser import parse
 from pyxie.renderer import render_content
 from pyxie.slots import fill_slots
-from pyxie.fasthtml import render_to_xml
+from pyxie.fasthtml import render_fasthtml_block
 from fastcore.xml import Div, P, Span, FT, to_xml
 
 def time_execution(func, *args, **kwargs):

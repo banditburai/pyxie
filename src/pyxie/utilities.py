@@ -426,11 +426,9 @@ def build_pagination_urls(
     params: Optional[Dict[str, str]] = None
 ) -> Dict[str, str]:
     """Generate pagination URLs based on pagination info."""
-    # Early return for single-page results
     if pagination.total_pages <= 1:
         return {"current": base_url}
     
-    # Build URL with parameters
     def build_url(page: Optional[int]) -> str:
         if page is None or page < 1 or page > pagination.total_pages:
             return base_url
@@ -446,7 +444,6 @@ def build_pagination_urls(
             
         return f"{base_url}?{'&'.join(f'{k}={v}' for k, v in url_params.items())}"
     
-    # Build navigation URLs    
     return {
         "current": build_url(pagination.current_page),
         "next": build_url(pagination.next_page),

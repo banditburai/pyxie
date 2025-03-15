@@ -40,10 +40,8 @@ def apply_pagination(query: Q, page: Optional[int], per_page: Optional[int],
                    offset: Optional[int], limit: Optional[int]) -> Q:
     """Apply pagination parameters to a query."""    
     if page is not None:
-        # Use consistent default per_page value
         return query.page(page, per_page or DEFAULT_PER_PAGE)
     
-    # Apply offset and limit if provided, otherwise return the query as is
     return query.offset(offset or 0).limit(limit) if offset or limit else query
 
 class Pyxie:
@@ -65,12 +63,10 @@ class Pyxie:
             **(default_metadata or {})
         }
         self.cache = Cache(cache_dir) if cache_dir else None
-        
-        # Collections
+                
         self._collections: Dict[str, Collection] = {}
         self._items: Dict[str, ContentItem] = {}
         
-        # Initialize if content directory provided
         if self.content_dir:
             self.add_collection("content", self.content_dir)
     
@@ -119,16 +115,10 @@ class Pyxie:
     def _process_content_item(self, item: ContentItem, index: int, collection: 'Collection') -> None:
         """Process and store a content item."""
         if not item:
-            return
-            
-        # Set cache if available
+            return            
         if self.cache:
-            item._cache = self.cache
-            
-        # Set index
-        item.index = index
-        
-        # Store in collection
+            item._cache = self.cache            
+        item.index = index        
         collection._items[item.slug] = item
         self._items[item.slug] = item
     
@@ -145,9 +135,11 @@ class Pyxie:
         """Get items from a specific collection or all items."""
         if not collection:
             return list(self._items.values())
-        
-        collection_items = self._collections.get(collection, {})._items
-        return list(collection_items.values())
+        collection_obj = self._collections.get(collection)
+        if not collection_obj:
+            return []
+            
+        return list(collection_obj._items.values())
     
     def _apply_filters(self, query: Q, filters: Dict[str, Any]) -> Q:
         """Apply filters to a query."""
@@ -158,11 +150,9 @@ class Pyxie:
         if not order:
             return query
             
-        # Convert string to list for consistent handling
         order_fields = [order] if isinstance(order, str) else order
         return query.order_by(*order_fields)
     
-    # Define pagination methods as class methods for better reuse
     @staticmethod
     def _cursor_pagination(
         query: Q, 
@@ -196,28 +186,23 @@ class Pyxie:
         **filters: Any
     ) -> QueryResult[ContentItem]:
         """Get filtered content items."""
-        # Get items from collection or all items
         items = self._get_collection_items(collection)
         if not items:
             return QueryResult(items=[], total=0)
             
-        # Extract special parameters with walrus operator (Python 3.8+)
         order = filters.pop("order_by", None)
         limit = filters.pop("limit", None)
         offset = filters.pop("offset", None)
         page = max(1, int(page)) if (page := filters.pop("page", None)) is not None else None
         per_page = max(1, int(per_page)) if (per_page := filters.pop("per_page", None)) is not None else None
         
-        # Extract cursor pagination parameters
         cursor_field = filters.pop("cursor_field", None)
         cursor_value = filters.pop("cursor_value", None)
         cursor_limit = filters.pop("cursor_limit", None) or limit
         cursor_direction = filters.pop("cursor_direction", "forward")
         
-        # Build query with method chaining - type cast for better typing
         query = cast(Query, self._apply_sorting(self._apply_filters(Query(items), filters), order))
         
-        # Choose pagination method based on parameters
         if cursor_field:
             query = self._cursor_pagination(query, cursor_field, cursor_value, cursor_limit, cursor_direction)
         else:
@@ -233,7 +218,6 @@ class Pyxie:
         status: Optional[str] = "published"
     ) -> Tuple[Optional[ContentItem], Optional[Tuple[str, str]]]:
         """Get single content item by slug."""
-        # Find item
         if collection:
             if collection not in self._collections:
                 return None, ("Collection Not Found", f"Collection '{collection}' does not exist")
@@ -242,11 +226,9 @@ class Pyxie:
         else:
             item = self._items.get(slug)
             
-        # Check if found
         if not item:
             return None, ("Post Not Found", f"Sorry, we couldn't find a post matching '{slug}'")
             
-        # Check status if specified
         if status and item.metadata.get("status") != status:
             return None, ("Post Not Available", f"This post does not have status '{status}'")
                 
@@ -260,7 +242,6 @@ class Pyxie:
         for item in items:
             tag_counter.update(item.tags)
                 
-        # Sort by count (desc) then name (asc)
         return {tag: count for tag, count in sorted(
             tag_counter.items(), key=lambda x: (-x[1], x[0])
         )}
@@ -280,15 +261,12 @@ class Pyxie:
             
         try:
             if collection and slug:
-                # Invalidate specific item
                 if item := self._items.get(slug):
                     if item.source_path:
                         self.cache.invalidate(collection, item.source_path)
-            elif collection:
-                # Invalidate entire collection
+            elif collection:                
                 self.cache.invalidate(collection)
             else:
-                # Invalidate everything
                 self.cache.invalidate()
         except (IOError, OSError) as e:
             log(logger, "Pyxie", "error", "cache", f"Failed to invalidate cache: {e}")

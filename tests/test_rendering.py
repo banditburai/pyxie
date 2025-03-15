@@ -7,9 +7,9 @@ from fastcore.xml import Div, H1, Article, Aside, FT
 from typing import Optional, Callable, Any, List, Dict, TypeVar, Protocol
 from dataclasses import dataclass
 
-from pyxie.renderer import render_block, render_blocks, RenderError, render_content
+from pyxie.renderer import render_block, render_blocks, RenderError, render_content, process_fasthtml
 from pyxie.parser import ContentBlock
-from pyxie.layouts import layout
+from pyxie.layouts import layout, registry
 from pyxie.pyxie import Pyxie
 
 T = TypeVar('T', bound=FT)
@@ -207,4 +207,113 @@ def test_complex_nested_content() -> None:
     
     # Check for "nested" with both straight quotes and HTML entities
     assert ("return \"nested\"" in result or "return &quot;nested&quot;" in result)
-    assert "List item 2" in result 
+    assert "List item 2" in result
+
+def test_process_fasthtml() -> None:
+    """Test processing of FastHTML blocks, including error handling."""
+    from pyxie.renderer import process_fasthtml
+    
+    # Test with valid HTML content inside fasthtml tags (should be passed through)
+    valid_html_content = '<p>Text</p><fasthtml><div id="test">Direct HTML content</div></fasthtml>'
+    result = process_fasthtml(valid_html_content)
+    assert "<p>Text</p>" in result
+    assert '<div id="test">Direct HTML content</div>' in result
+    
+    # Test with invalid content that triggers error handling
+    invalid_content = '<p>Text</p><fasthtml>invalid syntax</fasthtml>'
+    result = process_fasthtml(invalid_content)
+    assert "<p>Text</p>" in result
+    assert "Error" in result # Should show an error message
+    assert "FastHTMLExecutionError" in result # The specific error
+
+class MockCache:
+    """Mock cache for testing."""
+    
+    def __init__(self):
+        self.cache = {}
+        self.get_called = False
+        self.store_called = False
+    
+    def get(self, collection, path, layout):
+        self.get_called = True
+        key = f"{collection}:{path}:{layout}"
+        return self.cache.get(key)
+    
+    def store(self, collection, path, content, layout):
+        self.store_called = True
+        key = f"{collection}:{path}:{layout}"
+        self.cache[key] = content
+
+def test_render_content_with_cache() -> None:
+    """Test rendering content with cache."""
+    from pyxie.types import ContentItem
+    from pyxie.renderer import render_content
+    from pyxie.layouts import layout, registry
+    from fastcore.xml import Div, H1
+    
+    # Register test layout using the decorator pattern
+    @layout("cache-test")
+    def test_layout(metadata=None):
+        return Div(H1("Test Title"), cls="test-layout")
+    
+    # Create test item
+    item = ContentItem(
+        slug="test-cache",
+        content="# Test Content",
+        metadata={"layout": "cache-test"},
+        source_path=None,
+        index=0,  # Required for ContentItem
+        blocks={"content": [ContentBlock(name="content", content="# Test", params={})]}
+    )
+    
+    # First render (no cache)
+    mock_cache = MockCache()
+    result1 = render_content(item, mock_cache)
+    
+    assert "test-layout" in result1
+    assert mock_cache.get_called
+    assert mock_cache.store_called
+    
+    # Second render (with cache)
+    mock_cache.get_called = False
+    mock_cache.store_called = False
+    
+    # Update cache to simulate a cache hit
+    mock_cache.cache[item.slug] = result1
+    
+    result2 = render_content(item, mock_cache)
+    assert result2 == result1  # Should get the cached result
+    assert mock_cache.get_called
+    assert not mock_cache.store_called  # Shouldn't store cache again
+
+def test_handle_slot_filling_errors() -> None:
+    """Test handling of slot filling errors."""
+    from pyxie.renderer import handle_slot_filling
+    from pyxie.slots import SlotFillResult
+    from lxml import etree
+    import io
+    
+    # This test needs to create situations where fill_slots returns was_filled=False
+    
+    # Case 1: Test with malformed component (not an FT or string)
+    # This should cause an error in extract_layout_root
+    html, error = handle_slot_filling(42, {"content": ["<p>Test</p>"]}, "test-slug")
+    assert html is None
+    assert error is not None
+    assert "Failed to fill slots" in error
+    
+    # Case 2: Test with valid XML but slots not filled
+    # Our slots system might auto-repair some types of malformed HTML,
+    # so let's create a scenario where slots definitely can't be filled
+    valid_xml = '<!DOCTYPE html><html><body><div data-slot="missing-slot"></div></body></html>'
+    html, error = handle_slot_filling(valid_xml, {"different-slot": ["<p>Test</p>"]}, "test-slug")
+    # The HTML should be returned with empty slots - it doesn't consider this an error
+    assert html is not None
+    assert "<p>Test</p>" not in html
+    
+    # Case 3: Valid case - slots are filled correctly
+    valid_xml = '<!DOCTYPE html><html><body><div data-slot="content"></div></body></html>'
+    html, error = handle_slot_filling(valid_xml, {"content": ["<p>Test</p>"]}, "test-slug")
+    assert html is not None
+    assert error is None
+    assert "<p>Test</p>" in html 
