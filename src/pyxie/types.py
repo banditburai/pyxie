@@ -143,11 +143,19 @@ class ContentItem:
                     if f"image_{key}" in self.metadata
                 })
                 
+                if 'seed' not in format_params and '{seed}' in template:
+                    format_params['seed'] = self.slug.replace("-", "")
+                
                 return template.format(**format_params)
             except (KeyError, ValueError) as e:
                 log(logger, "Types", "warning", "image", f"Failed to format template: {e}")
                 
-        return f"https://picsum.photos/seed/{self.slug}/800/600" if self.slug else None
+        # Fallback to default placeholder if we have a slug using concise ternary
+        return DEFAULT_METADATA["image_template"].format(
+            seed=self.slug,
+            width=DEFAULT_METADATA["image_width"],
+            height=DEFAULT_METADATA["image_height"]
+        ) if self.slug else None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
