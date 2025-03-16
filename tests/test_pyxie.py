@@ -245,4 +245,44 @@ def custom_path_layout(title="Custom Path") -> FT:
     finally:
         # Restore registry
         registry._layouts.clear()
-        registry._layouts.update(saved_layouts) 
+        registry._layouts.update(saved_layouts)
+
+def test_custom_slug_support(pyxie: Pyxie) -> None:
+    """Test support for custom slugs in frontmatter."""
+    # Create test collection
+    test_dir = pyxie.content_dir / "slug_test"
+    test_dir.mkdir()
+    
+    # Add file with default slug (from filename)
+    default_content = TestContent(
+        content="# Default Slug Test",
+        metadata={"title": "Default Slug Post"}
+    )
+    default_content.write_to(test_dir / "default-slug.md")
+    
+    # Add file with custom slug in frontmatter
+    custom_content = TestContent(
+        content="# Custom Slug Test",
+        metadata={"title": "Custom Slug Post", "slug": "custom-url-path"}
+    )
+    custom_content.write_to(test_dir / "filename-ignored.md")
+    
+    # Add collection and verify content
+    pyxie.add_collection("slug_test", test_dir)
+    
+    # Test default slug behavior (from filename)
+    default_item, _ = pyxie.get_item("default-slug", collection="slug_test")
+    assert default_item is not None
+    assert default_item.slug == "default-slug"
+    assert default_item.metadata["title"] == "Default Slug Post"
+    
+    # Test custom slug behavior (from frontmatter)
+    custom_item, _ = pyxie.get_item("custom-url-path", collection="slug_test")
+    assert custom_item is not None
+    assert custom_item.slug == "custom-url-path"
+    assert custom_item.metadata["title"] == "Custom Slug Post"
+    
+    # Original filename should not be accessible
+    nonexistent_item, error = pyxie.get_item("filename-ignored", collection="slug_test")
+    assert nonexistent_item is None
+    assert error is not None 

@@ -452,4 +452,33 @@ class TestModuleImportUtilities:
             logger_mock = MagicMock()
             result = safe_import("error_module", context_path=tmpdir, logger_instance=logger_mock)
             assert result is None
-            logger_mock.error.assert_called_once() 
+            logger_mock.error.assert_called_once()
+
+    def test_custom_slug_in_frontmatter(self, tmp_path):
+        """Test that custom slugs in frontmatter override the filename-based slug."""
+        from pyxie.utilities import _prepare_content_item
+        
+        # Create a test file with a custom slug in frontmatter
+        file_path = tmp_path / "test-file.md"
+        
+        # Mock parsed data with a custom slug in metadata
+        class MockParsed:
+            def __init__(self):
+                self.metadata = {"slug": "custom-slug", "title": "Test Title"}
+                self.blocks = {}
+        
+        # Create a content item
+        content_item = _prepare_content_item(
+            file_path=file_path,
+            content="Test content",
+            parsed=MockParsed(),
+            default_metadata={"author": "Test Author"}
+        )
+        
+        # Verify the custom slug was used instead of the filename
+        assert content_item.slug == "custom-slug"
+        assert content_item.slug != "test-file"
+        
+        # Verify other metadata is preserved
+        assert content_item.metadata["title"] == "Test Title"
+        assert content_item.metadata["author"] == "Test Author" 

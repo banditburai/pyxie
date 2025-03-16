@@ -194,14 +194,14 @@ def _prepare_content_item(
 ) -> Any:
     """Create a ContentItem from parsed content with appropriate metadata."""
     from .types import ContentItem
-    
-    slug = file_path.stem
-    
+        
     metadata = {}
     if parsed.metadata:
         metadata.update(parsed.metadata)
     if default_metadata:
         metadata = merge_metadata(default_metadata, metadata)
+        
+    slug = metadata.get("slug", file_path.stem)
     
     return ContentItem(
         slug=slug,
