@@ -82,5 +82,6 @@ replace = '__version__ = "{new_version}"'
 
 [[tool.bumpversion.files]]
 filename = "pyproject.toml"
-search = 'version = "{current_version}"'
-replace = 'version = "{new_version}"'
+search = '(\\[project\\][^[]*?version = "){current_version}(")'
+replace = '\\1{new_version}\\2'
+regex = true

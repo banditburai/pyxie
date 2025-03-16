@@ -1,7 +1,8 @@
 name: Publish Python 🐍 distribution 📦 to PyPI
 
 on:
-  workflow_dispatch:
+    release:
+      types: [published]
 
 jobs:
   build:
@@ -13,12 +14,6 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
-    - name: Get version from pyproject.toml
-      id: get_version
-      run: |
-        VERSION=$(grep 'version = ' pyproject.toml | cut -d '"' -f2)
-        echo "VERSION=$VERSION" >> $GITHUB_ENV
-        echo "Current version: $VERSION"
     - name: Install uv
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sh
