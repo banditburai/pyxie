@@ -167,4 +167,23 @@ def test_nested_layout_composition():
     assert "Main Content" in result
     assert "Conclusion" in result
     assert "This is the introduction" in result
-    assert "section-level-2" in result 
+    assert "section-level-2" in result
+
+def test_layout_name_attribute():
+    """Test that the @layout decorator sets the _layout_name attribute correctly."""
+    from pyxie.layouts import layout, get_layout
+    from fastcore.xml import Div, H1, FT
+    
+    # Create a test layout
+    @layout("test_attr")
+    def test_attr_layout(title="Test") -> FT:
+        return Div(H1(title))
+    
+    # Verify the _layout_name attribute was set
+    assert hasattr(test_attr_layout, '_layout_name')
+    assert test_attr_layout._layout_name == "test_attr"
+    
+    # Verify the layout was registered
+    registered_layout = get_layout("test_attr")
+    assert registered_layout is not None
+    assert registered_layout.name == "test_attr" 
