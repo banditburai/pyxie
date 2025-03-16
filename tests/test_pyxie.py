@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pyxie.pyxie import Pyxie
 from pyxie.errors import PyxieError
 from pyxie.types import ContentItem
+from pyxie.layouts import layout, registry
 
 # Test utilities
 @dataclass
@@ -155,4 +156,93 @@ def test_query_items(pyxie: Pyxie, has_cache: bool, test_paths: Dict[str, Path])
     assert len(filtered) == 1
     
     common = pyxie.get_items(tags__contains=["common"])
-    assert len(common) == 5 
+    assert len(common) == 5
+
+def test_initialization_with_auto_discover(test_paths: Dict[str, Path]) -> None:
+    """Test initialization with auto_discover_layouts parameter."""
+    # Create a test layout file
+    layouts_dir = test_paths['content'].parent / "layouts"
+    layouts_dir.mkdir(exist_ok=True)
+    
+    # Create a layout file
+    layout_file = layouts_dir / "test_layout.py"
+    layout_content = """
+from pyxie.layouts import layout
+from fastcore.xml import Div, H1, FT
+
+@layout("auto_test_layout")
+def auto_test_layout(title="Auto Test") -> FT:
+    return Div(H1(title), cls="auto-test")
+"""
+    layout_file.write_text(layout_content)
+    
+    # Save current registry state
+    saved_layouts = registry._layouts.copy()
+    
+    try:
+        # Clear registry
+        registry._layouts.clear()
+        
+        # Test with auto-discovery enabled (default)
+        pyxie1 = Pyxie(
+            content_dir=test_paths['content'],
+            cache_dir=test_paths['cache']
+        )
+        
+        assert "auto_test_layout" in registry._layouts
+        
+        # Clear registry again
+        registry._layouts.clear()
+        
+        # Test with auto-discovery disabled
+        pyxie2 = Pyxie(
+            content_dir=test_paths['content'],
+            cache_dir=test_paths['cache'],
+            auto_discover_layouts=False
+        )
+        
+        assert "auto_test_layout" not in registry._layouts
+        
+    finally:
+        # Restore registry
+        registry._layouts.clear()
+        registry._layouts.update(saved_layouts)
+
+def test_initialization_with_layout_paths(test_paths: Dict[str, Path]) -> None:
+    """Test initialization with custom layout_paths parameter."""
+    # Create a custom layout directory
+    custom_dir = test_paths['content'].parent / "custom_layouts"
+    custom_dir.mkdir(exist_ok=True)
+    
+    # Create a layout file in the custom directory
+    layout_file = custom_dir / "custom_layout.py"
+    layout_content = """
+from pyxie.layouts import layout
+from fastcore.xml import Div, H1, FT
+
+@layout("custom_path_layout")
+def custom_path_layout(title="Custom Path") -> FT:
+    return Div(H1(title), cls="custom-path")
+"""
+    layout_file.write_text(layout_content)
+    
+    # Save current registry state
+    saved_layouts = registry._layouts.copy()
+    
+    try:
+        # Clear registry
+        registry._layouts.clear()
+        
+        # Test with custom layout path
+        pyxie = Pyxie(
+            content_dir=test_paths['content'],
+            cache_dir=test_paths['cache'],
+            layout_paths=[custom_dir]
+        )
+        
+        assert "custom_path_layout" in registry._layouts
+        
+    finally:
+        # Restore registry
+        registry._layouts.clear()
+        registry._layouts.update(saved_layouts) 

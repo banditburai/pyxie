@@ -20,6 +20,9 @@ from typing import Dict, Optional, Any, Tuple, List, Union, Callable, TypeVar, c
 from collections import Counter
 import math
 from functools import partial
+import importlib.util
+import inspect
+import sys
 
 from .constants import DEFAULT_METADATA
 from .types import ContentItem, PathLike
@@ -53,7 +56,9 @@ class Pyxie:
         *,
         default_metadata: Optional[Dict[str, Any]] = None,
         cache_dir: Optional[PathLike] = None,
-        default_layout: str = "default"
+        default_layout: str = "default",
+        auto_discover_layouts: bool = True,
+        layout_paths: Optional[List[PathLike]] = None
     ):
         """Initialize Pyxie content manager."""
         self.content_dir = Path(content_dir) if content_dir else None
@@ -69,6 +74,75 @@ class Pyxie:
         
         if self.content_dir:
             self.add_collection("content", self.content_dir)
+            
+        # Auto-discover layouts if enabled
+        if auto_discover_layouts:
+            self.discover_layouts(layout_paths)
+    
+    def discover_layouts(self, layout_paths: Optional[List[PathLike]] = None) -> None:
+        """Discover and register layouts from Python modules in the project.
+        
+        If no paths are provided, it checks:
+        1. The project root directory (where content_dir parent is located)
+        2. Common layout directories (layouts, templates, static)
+        
+        Args:
+            layout_paths: Optional list of specific directories to search for layouts
+        """
+        # Early return if we can't determine layout paths
+        if not layout_paths and (not self.content_dir or not self.content_dir.parent):
+            return
+            
+        # Determine paths to search if not provided
+        if not layout_paths:
+            app_dir = self.content_dir.parent
+            layout_paths = [app_dir]  # Start with project root
+            
+            # Add common directories if they exist
+            for dirname in ["layouts", "templates", "static"]:
+                path = app_dir / dirname
+                if path.exists() and path.is_dir():
+                    layout_paths.append(path)
+        
+        # Process each directory
+        for path in [Path(p) for p in layout_paths]:
+            if not path.exists() or not path.is_dir():
+                log(logger, "Layouts", "warning", "discover", f"Layout directory not found: {path}")
+                continue
+                
+            # Root directory - non-recursive search 
+            if path == getattr(self.content_dir, 'parent', None):
+                self._process_layout_files(list(path.glob("*.py")))
+            # Other directories - recursive search
+            else:
+                self._process_layout_files(list(path.glob("**/*.py")))
+    
+    def _process_layout_files(self, python_files: List[Path]) -> None:
+        """Process Python files to find and register layouts.
+        
+        Args:
+            python_files: Iterator of Path objects for Python files
+        """
+        for python_file in python_files:
+            try:
+                # Import the module
+                module_name = python_file.stem
+                spec = importlib.util.spec_from_file_location(module_name, python_file)
+                if not spec or not spec.loader:
+                    continue
+                    
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                
+                # Find layout functions
+                for obj_name, obj in inspect.getmembers(module, 
+                                                      lambda o: inspect.isfunction(o) and hasattr(o, '_layout_name')):
+                    log(logger, "Layouts", "debug", "discover", 
+                        f"Found layout: {obj._layout_name} in {python_file.name}")
+                        
+            except Exception as e:
+                log(logger, "Layouts", "error", "discover", 
+                    f"Error loading layout file {python_file}: {str(e)}")
     
     @property
     def collections(self) -> List[str]:

@@ -174,6 +174,8 @@ def layout(name: str) -> Callable[[LayoutFunction], LayoutFunction]:
     """
     def decorator(func: LayoutFunction) -> LayoutFunction:
         registry.register(name, func)
+        # Store layout name on function for discovery
+        func._layout_name = name
         return func
     return decorator
 
