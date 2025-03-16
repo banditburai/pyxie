@@ -31,7 +31,10 @@ COMMON_DATE_FORMATS = [
 DEFAULT_METADATA = {
     "layout": "default",
     "author": "Anonymous",
-    "date": datetime.now().strftime("%Y-%m-%d")
+    "date": datetime.now().strftime("%Y-%m-%d"),
+    "image_template": "https://picsum.photos/seed/{seed}/{width}/{height}",
+    "image_width": 800,
+    "image_height": 600
 }
 
 # Content types

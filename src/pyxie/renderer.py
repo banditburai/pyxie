@@ -52,6 +52,10 @@ class CacheProtocol(Protocol):
 
 class PyxieHTMLRenderer(HTMLRenderer):
     """Custom HTML renderer for markdown with enhanced typography."""
+        
+    DEFAULT_WIDTH = 800
+    DEFAULT_HEIGHT = 600
+    PICSUM_URL = "https://picsum.photos/seed/{seed}/{width}/{height}"
     
     def render_raw_html(self, token):
         """Handle raw HTML blocks."""
@@ -87,6 +91,31 @@ class PyxieHTMLRenderer(HTMLRenderer):
         """Custom code block rendering."""
         language = token.language or ''
         return f'<pre><code class="language-{language}">{escape(token.content)}</code></pre>'
+        
+    def render_image(self, token) -> str:
+        """Custom image rendering with placeholder support.
+        
+        Supports special syntax:
+        1. pyxie:seed - Uses default 800x600
+        2. pyxie:seed/width/height - Custom dimensions
+        3. placeholder - Uses alt text as seed with default size
+        """
+        url = token.src
+        title = getattr(token, 'title', '')                
+        alt = self.render_inner(token)                
+        if url.startswith('pyxie:'):
+            parts = url[6:].split('/')
+            seed = parts[0]
+            width = parts[1] if len(parts) > 1 else self.DEFAULT_WIDTH
+            height = parts[2] if len(parts) > 2 else self.DEFAULT_HEIGHT
+            url = self.PICSUM_URL.format(seed=seed, width=width, height=height)
+        elif url == 'placeholder':            
+            seed = re.sub(r'[^\w\s-]', '', alt.lower())
+            seed = re.sub(r'[\s-]+', '-', seed).strip('-_')
+            url = self.PICSUM_URL.format(seed=seed, width=self.DEFAULT_WIDTH, height=self.DEFAULT_HEIGHT)
+            
+        title_attr = f' title="{escape(title)}"' if title else ''
+        return f'<img src="{escape(url)}" alt="{escape(alt)}"{title_attr}>'
 
 def process_fasthtml(content: str) -> str:
     """Process FastHTML blocks in content."""
@@ -99,7 +128,7 @@ def process_fasthtml(content: str) -> str:
 def render_markdown(content: str) -> str:
     """Render markdown content to HTML."""
     if not content.strip():
-        return content
+        return content            
     renderer = PyxieHTMLRenderer()
     doc = Document(content.strip())
     return renderer.render(doc)

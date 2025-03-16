@@ -131,19 +131,23 @@ class ContentItem:
     
     @property
     def image(self) -> Optional[str]:
-        """Get image URL, using template if available."""
-        # If direct image URL is set, use that
-        if direct_image := self.metadata.get("image"):
-            return direct_image
-            
-        # Otherwise try to use template
+        """Get image URL, using template if available."""        
+        if image := self.metadata.get("image"):
+            return image                    
         if template := self.metadata.get("image_template"):
             try:
-                return template.format(index=self.index)
-            except (KeyError, ValueError) as e:
-                log(logger, "Types", "warning", "image", f"Failed to format image template '{template}': {e}")
+                format_params = {"index": self.index, "slug": self.slug}
+                format_params.update({
+                    key: self.metadata[f"image_{key}"]
+                    for key in ["width", "height", "seed", "size", "color", "format"]
+                    if f"image_{key}" in self.metadata
+                })
                 
-        return None
+                return template.format(**format_params)
+            except (KeyError, ValueError) as e:
+                log(logger, "Types", "warning", "image", f"Failed to format template: {e}")
+                
+        return f"https://picsum.photos/seed/{self.slug}/800/600" if self.slug else None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
