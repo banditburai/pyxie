@@ -399,3 +399,48 @@ Block 2 content
     # Test with starting position
     assert find_tag_line_number(content, "block2", 
                                content.find("</block1>")) == 11 
+
+def test_tags_in_code_blocks():
+    """Test that XML tags inside code blocks are not treated as content blocks."""
+    content = """---
+title: Test Document with Code Blocks
+---
+
+Regular content with a <example>This is a real section</example> tag.
+
+<content>
+Here is some content.
+</content>
+
+```python
+# This is a code block
+def test_function():
+    # This comment has a <sample> tag that should be ignored
+    print("<example>This should also be ignored</example>")
+```
+
+And some inline code with a tag: `<inline>` that should be ignored.
+
+Let's also verify HTML entities: &lt;tag&gt; should not be interpreted as a section.
+
+<final>
+This should be interpreted as a section block.
+</final>
+"""
+    
+    parsed = parse(content)
+    
+    # Check that tags in regular content are treated as section blocks
+    assert "content" in parsed.blocks
+    assert "example" in parsed.blocks
+    assert "final" in parsed.blocks
+    
+    # Check the content of the example block to make sure it's the right one
+    example_block = parsed.get_block("example")
+    assert example_block is not None
+    assert "This is a real section" in example_block.content
+    
+    # Check that tags in code blocks, inline code, and HTML entities are ignored
+    assert "sample" not in parsed.blocks  # From the code block comment
+    assert "inline" not in parsed.blocks  # From the inline code
+    assert "tag" not in parsed.blocks  # From the HTML entity &lt;tag&gt; 
