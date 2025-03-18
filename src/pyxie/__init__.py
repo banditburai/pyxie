@@ -38,6 +38,14 @@ __version__ = "0.1.1"
 # This avoids circular imports while keeping the API clean
 ContentItem.html = property(lambda self: render_content(self, self._cache))
 
+def _render_for_fasthtml(self):
+    from fasthtml.common import NotStr
+    if hasattr(self, 'html'):
+        return NotStr(self.html)
+    return None
+
+ContentItem.render = _render_for_fasthtml
+
 __all__ = [
     # Main class
     "Pyxie",

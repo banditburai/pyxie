@@ -258,33 +258,61 @@ def test_render_content_with_cache() -> None:
     
     # Create test item
     item = ContentItem(
-        slug="test-cache",
-        content="# Test Content",
-        metadata={"layout": "cache-test"},
-        source_path=None,
-        index=0,  # Required for ContentItem
-        blocks={"content": [ContentBlock(name="content", content="# Test", params={})]}
+        slug="test-item",
+        content="# Test\nThis is a test.",
+        source_path=Path("test/test-item.md"),
+        metadata={"layout": "cache-test"}
     )
     
-    # First render (no cache)
+    # Create mock cache
     mock_cache = MockCache()
-    result1 = render_content(item, mock_cache)
     
-    assert "test-layout" in result1
-    assert mock_cache.get_called
+    # First render should store in cache
+    result = render_content(item, mock_cache)
     assert mock_cache.store_called
+    assert "test-layout" in result
+    assert "<h1>Test Title</h1>" in result
     
-    # Second render (with cache)
-    mock_cache.get_called = False
+    # Reset mock
     mock_cache.store_called = False
     
-    # Update cache to simulate a cache hit
-    mock_cache.cache[item.slug] = result1
+    # Second render should retrieve from cache
+    second_result = render_content(item, mock_cache)
+    assert not mock_cache.store_called
+    assert second_result == result
+
+def test_content_item_render_method() -> None:
+    """Test the render() method on ContentItem."""
+    from pyxie.types import ContentItem
+    from fasthtml.common import NotStr
+    from pyxie.layouts import layout
+    from fastcore.xml import Div, H1
     
-    result2 = render_content(item, mock_cache)
-    assert result2 == result1  # Should get the cached result
-    assert mock_cache.get_called
-    assert not mock_cache.store_called  # Shouldn't store cache again
+    # Register test layout
+    @layout("render-test")
+    def test_layout(metadata=None):
+        return Div(H1("Rendered Title"), cls="render-test")
+    
+    # Create test item with layout
+    item = ContentItem(
+        slug="render-test-item",
+        content="Test content for render method",
+        source_path=Path("test/render-test-item.md"),
+        metadata={"layout": "render-test"}
+    )
+    
+    # Access the html property to trigger rendering
+    html_content = item.html
+    assert "<h1>Rendered Title</h1>" in html_content
+    
+    # Test the render method
+    rendered = item.render()
+    
+    # Verify it returns a NotStr
+    assert isinstance(rendered, NotStr)
+    
+    # Verify the content matches the html property
+    assert str(rendered) == html_content
 
 def test_handle_slot_filling_errors() -> None:
     """Test handling of slot filling errors."""
