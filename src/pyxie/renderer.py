@@ -196,7 +196,9 @@ def get_cached_content(cache: Optional[CacheProtocol], item: ContentItem) -> Opt
 
 def get_layout_instance(item: ContentItem) -> Tuple[Optional[Any], Optional[str]]:
     """Get layout instance for content item."""
-    layout_name = item.metadata.get("layout", "default")
+    # Use instance's default_layout if available, otherwise fall back to "default"
+    default = getattr(item, "_pyxie", None) and getattr(item._pyxie, "default_layout", "default") or "default"
+    layout_name = item.metadata.get("layout", default)
     layout = get_layout(layout_name)
     
     if not layout:

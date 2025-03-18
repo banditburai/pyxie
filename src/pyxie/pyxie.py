@@ -62,9 +62,14 @@ class Pyxie:
     ):
         """Initialize Pyxie content manager."""
         self.content_dir = Path(content_dir) if content_dir else None
+        self.default_layout = default_layout
+        
+        if default_metadata and "layout" in default_metadata:
+            log(logger, "Config", "warning", "init", 
+                f"Both default_layout and default_metadata['layout'] specified. Using default_layout='{default_layout}'.")
+                
         self.default_metadata = {
             **DEFAULT_METADATA,
-            "layout": default_layout,
             **(default_metadata or {})
         }
         self.cache = Cache(cache_dir) if cache_dir else None
@@ -73,9 +78,7 @@ class Pyxie:
         self._items: Dict[str, ContentItem] = {}
         
         if self.content_dir:
-            self.add_collection("content", self.content_dir)
-            
-        # Auto-discover layouts if enabled
+            self.add_collection("content", self.content_dir)                    
         if auto_discover_layouts:
             self.discover_layouts(layout_paths)
     
@@ -89,31 +92,25 @@ class Pyxie:
         Args:
             layout_paths: Optional list of specific directories to search for layouts
         """
-        # Early return if we can't determine layout paths
         if not layout_paths and (not self.content_dir or not self.content_dir.parent):
             return
             
-        # Determine paths to search if not provided
         if not layout_paths:
             app_dir = self.content_dir.parent
             layout_paths = [app_dir]  # Start with project root
             
-            # Add common directories if they exist
             for dirname in ["layouts", "templates", "static"]:
                 path = app_dir / dirname
                 if path.exists() and path.is_dir():
                     layout_paths.append(path)
         
-        # Process each directory
         for path in [Path(p) for p in layout_paths]:
             if not path.exists() or not path.is_dir():
                 log(logger, "Layouts", "warning", "discover", f"Layout directory not found: {path}")
                 continue
-                
-            # Root directory - non-recursive search 
+                            
             if path == getattr(self.content_dir, 'parent', None):
                 self._process_layout_files(list(path.glob("*.py")))
-            # Other directories - recursive search
             else:
                 self._process_layout_files(list(path.glob("**/*.py")))
     
@@ -125,7 +122,6 @@ class Pyxie:
         """
         for python_file in python_files:
             try:
-                # Import the module
                 module_name = python_file.stem
                 spec = importlib.util.spec_from_file_location(module_name, python_file)
                 if not spec or not spec.loader:
@@ -134,7 +130,6 @@ class Pyxie:
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
                 
-                # Find layout functions
                 for obj_name, obj in inspect.getmembers(module, 
                                                       lambda o: inspect.isfunction(o) and hasattr(o, '_layout_name')):
                     log(logger, "Layouts", "debug", "discover", 
@@ -164,7 +159,7 @@ class Pyxie:
         name: str,
         path: PathLike,
         *,
-        default_layout: str = "default",
+        default_layout: Optional[str] = None,
         default_metadata: Optional[Dict[str, Any]] = None
     ) -> None:
         """Add a content collection."""
@@ -175,7 +170,7 @@ class Pyxie:
         collection = Collection(
             name=name,
             path=path,
-            default_layout=default_layout,
+            default_layout=default_layout or self.default_layout,
             default_metadata={
                 **self.default_metadata,
                 **(default_metadata or {}),
@@ -192,7 +187,8 @@ class Pyxie:
             return            
         if self.cache:
             item._cache = self.cache            
-        item.index = index        
+        item.index = index
+        item._pyxie = self      
         collection._items[item.slug] = item
         self._items[item.slug] = item
     

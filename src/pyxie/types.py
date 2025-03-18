@@ -81,6 +81,9 @@ class ContentItem:
     # Flexible metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
     
+    # Collection reference
+    collection: Optional[str] = None
+    
     # Auto-populated fields
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
@@ -92,6 +95,9 @@ class ContentItem:
     # Private cache reference for html rendering
     _cache: Any = field(default=None, repr=False)
     
+    # Reference to owning Pyxie instance
+    _pyxie: Any = field(default=None, repr=False)
+
     def __post_init__(self):
         """Add metadata keys as attributes for easy access."""
         # Ensure basic metadata exists
@@ -123,11 +129,6 @@ class ContentItem:
         raw_tags = self.metadata.get("tags", [])
         from .utilities import normalize_tags
         return normalize_tags(raw_tags)
-    
-    @property
-    def collection(self) -> Optional[str]:
-        """Get collection name if any."""
-        return self.metadata.get("collection")
     
     @property
     def image(self) -> Optional[str]:
@@ -178,19 +179,17 @@ class ContentItem:
     def from_dict(cls, data: Dict[str, Any]) -> "ContentItem":
         """Create from dictionary."""
         item = cls(
-            slug=data["slug"],
-            content=data["content"],
-            source_path=Path(data["source_path"]),
-            content_type=data["content_type"],
             metadata=data["metadata"],
-            created_at=datetime.fromisoformat(data["created_at"]),
-            updated_at=datetime.fromisoformat(data["updated_at"]),
-            index=data.get("index", 0)  # Get index with default 0
+            content=data["content"],
+            slug=data["slug"],
+            source_path=Path(data["source_path"]),
+            content_type=data.get("content_type", "markdown"),
+            collection=data.get("collection"),
+            index=data.get("index", 0)
         )
         
         # Reconstruct blocks
-        blocks_data = data.get("blocks", {})
-        for name, block_list in blocks_data.items():
+        for name, block_list in data.get("blocks", {}).items():
             item.blocks[name] = [
                 ContentBlock(**block_data)
                 for block_data in block_list

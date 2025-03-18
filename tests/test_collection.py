@@ -430,6 +430,31 @@ def test_default_metadata(mock_parse, sample_content):
     assert item.metadata["category"] == "Testing"
     assert item.metadata["title"] == "First Post"  # Original value preserved
 
+def test_default_layout_precedence(mock_parse, sample_content):
+    """Test that default_layout takes precedence over default_metadata['layout']."""
+    # Create a collection with conflicting layout settings
+    default_metadata = {"layout": "metadata_layout"}
+    default_layout = "explicit_layout"
+    
+    collection = Collection(
+        name="test",
+        path=sample_content,
+        default_layout=default_layout,
+        default_metadata=default_metadata
+    )
+    collection.load()
+    
+    # Check that default_layout was used instead of default_metadata["layout"]
+    for item in collection:
+        assert item.metadata["layout"] == default_layout
+        assert item.metadata["layout"] != default_metadata["layout"]
+    
+    # Verify the warning was logged (we can't easily test this without mocking the logger)
+    # But we can verify the Collection keeps the original default_metadata intact
+    assert collection.default_metadata == default_metadata
+    assert "layout" in collection.default_metadata
+    assert collection.default_metadata["layout"] == "metadata_layout"
+
 def test_error_handling(mock_parse, temp_dir, caplog):
     """Test error handling when loading malformed content."""
     # Create a file that will cause the mock parser to create invalid metadata
@@ -456,3 +481,22 @@ def test_error_handling(mock_parse, temp_dir, caplog):
         
         # The collection should be empty since the file couldn't be loaded
         assert len(collection) == 0 
+
+def test_collection_reference_on_items(mock_parse, sample_content):
+    """Test that ContentItem instances have the correct collection name set."""
+    collection_name = "test_collection_reference"
+    collection = Collection(
+        name=collection_name,
+        path=sample_content
+    )
+    collection.load()
+    
+    # Check that every item has the correct collection reference
+    for item in collection:
+        assert item.collection == collection_name
+        
+    # Test that the collection reference is used in calls to other systems
+    # Here we're just checking that it's available, we test its usage elsewhere
+    item = next(iter(collection))
+    assert hasattr(item, "collection")
+    assert item.collection is not None 

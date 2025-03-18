@@ -25,26 +25,36 @@ from .errors import CollectionError
 
 logger = logging.getLogger(__name__)
 
-@dataclass
 class Collection:
-    """A collection of content files.
+    """Content collection.
     
-    Attributes:
-        name: Collection name
-        path: Path to content files
-        default_layout: Default layout for items in this collection
-        default_metadata: Default metadata for items in this collection
-        _items: Internal storage for content items
+    A collection is a logical grouping of content items with common default settings.
     """
-    name: str
-    path: PathLike
-    default_layout: str = "default"
-    default_metadata: Dict[str, Any] = field(default_factory=dict)
-    _items: Dict[str, ContentItem] = field(default_factory=dict, init=False)
     
-    def __post_init__(self) -> None:
-        """Convert path to Path object after initialization."""
-        self.path = Path(self.path)
+    def __init__(
+        self, 
+        name: str, 
+        path: PathLike, 
+        default_layout: str = "default", 
+        default_metadata: Optional[Dict[str, Any]] = None
+    ):
+        """Initialize a collection.
+        
+        Args:
+            name: Name of collection
+            path: Path to content directory
+            default_layout: Default layout to use for content items
+            default_metadata: Default metadata values
+        """
+        self.name = name
+        self.path = Path(path) 
+        self.default_layout = default_layout        
+        self.default_metadata = default_metadata or {}        
+        if default_metadata and "layout" in default_metadata and default_metadata["layout"] != default_layout:
+            log(logger, "Config", "warning", "init", 
+                f"Both default_layout and default_metadata['layout'] specified in Collection. Using default_layout='{default_layout}'.")
+                
+        self._items: Dict[str, ContentItem] = {}
         
     def __iter__(self) -> Iterator[ContentItem]:
         """Iterate over all items in collection."""
@@ -61,10 +71,7 @@ class Collection:
     def load(self) -> None:
         """Load content files from disk."""
         try:
-            # Create directory if it doesn't exist
-            self.path.mkdir(parents=True, exist_ok=True)
-            
-            # Load all markdown files
+            self.path.mkdir(parents=True, exist_ok=True)            
             for file in self.path.glob("*.md"):
                 try:
                     self._load_file(file)
@@ -82,14 +89,15 @@ class Collection:
         
         Args:
             file: Path to markdown file
-        """
-        # Add default_layout to default_metadata if not already present
+        """        
         metadata = self.default_metadata.copy()
-        if "layout" not in metadata:
+        if "layout" in metadata:            
             metadata["layout"] = self.default_layout
-            
+        else:
+            metadata["layout"] = self.default_layout            
         item = load_content_file(file, metadata, logger)
         if item:
+            item.collection = self.name
             self._items[item.slug] = item
     
     def get_item(self, slug: str) -> Optional[ContentItem]:
@@ -113,13 +121,11 @@ class Collection:
         Returns:
             List of matching items
         """
-        # Filter items
         items = [
             item for item in self
             if all(item.metadata.get(k) == v for k, v in filters.items())
         ]
         
-        # Sort items
         if order_by:
             reverse = order_by.startswith("-")
             field = order_by[1:] if reverse else order_by
@@ -128,5 +134,4 @@ class Collection:
                 reverse=reverse
             )
         
-        # Apply limit
         return items[:limit] if limit is not None else items 
