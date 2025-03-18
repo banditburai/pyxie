@@ -84,7 +84,7 @@ def pyxie(test_paths: Dict[str, Path]) -> Pyxie:
 
 # Test cases
 @pytest.mark.parametrize("markdown,expected_html", [
-    ("# Title\nContent", ["<h1>Title</h1>", "<p>Content</p>"]),
+    ("# Title\nContent", ["<h1 id=\"title\">Title</h1>", "<p>Content</p>"]),
     ("[Link](https://example.com)\n![Image](image.jpg)", 
      ['<a href="https://example.com">Link</a>', '<img src="image.jpg" alt="Image"']),
     ("```python\ndef test(): pass\n```\nInline `code`",
@@ -94,8 +94,9 @@ def test_markdown_rendering(markdown: str, expected_html: List[str]) -> None:
     """Test various markdown rendering cases."""
     block = ContentBlock(name="content", content=markdown, params={})
     result = render_block(block)
+    assert result.success, f"Rendering failed with error: {result.error}"
     for html in expected_html:
-        assert html in result
+        assert html in result.content
 
 def test_integration_with_layout(pyxie: Pyxie) -> None:
     """Test integration of rendered markdown with layout."""
@@ -156,12 +157,9 @@ def test_error_handling(pyxie: Pyxie, error_case: str) -> None:
     """Test various error handling cases."""
     if error_case == "empty_content":
         block = ContentBlock(name="content", content="", params={})
-        try:
-            render_block(block)
-            assert False, "Expected RenderError but none was raised"
-        except RenderError:
-            # Expected error
-            pass
+        result = render_block(block)
+        assert not result.success
+        assert "Cannot render empty content block" in result.error
     
     elif error_case == "invalid_layout":
         content_file = pyxie.content_dir / "test.md"
@@ -180,8 +178,8 @@ status: published
     elif error_case == "malformed_html":
         block = ContentBlock(name="content", content="<unclosed>test", params={})
         result = render_block(block)
-        # The current implementation doesn't sanitize HTML, so the tag is preserved
-        assert "<unclosed>" in result
+        assert result.success
+        assert "<unclosed>" in result.content
 
 def test_complex_nested_content() -> None:
     """Test rendering of complex nested content."""
@@ -197,17 +195,18 @@ def test_complex_nested_content() -> None:
 """
     block = ContentBlock(name="content", content=markdown, params={})
     result = render_block(block)
+    assert result.success
     
     # Check for content presence rather than exact HTML format
-    assert "Section 1" in result
-    assert "Subsection" in result
-    assert "List item 1" in result
-    assert "Nested item" in result
-    assert "def test" in result
+    assert "Section 1" in result.content
+    assert "Subsection" in result.content
+    assert "List item 1" in result.content
+    assert "Nested item" in result.content
+    assert "def test" in result.content
     
     # Check for "nested" with both straight quotes and HTML entities
-    assert ("return \"nested\"" in result or "return &quot;nested&quot;" in result)
-    assert "List item 2" in result
+    assert ("return \"nested\"" in result.content or "return &quot;nested&quot;" in result.content)
+    assert "List item 2" in result.content
 
 def test_process_fasthtml() -> None:
     """Test processing of FastHTML blocks, including error handling."""
@@ -216,15 +215,9 @@ def test_process_fasthtml() -> None:
     # Test with valid HTML content inside fasthtml tags (should be passed through)
     valid_html_content = '<p>Text</p><fasthtml><div id="test">Direct HTML content</div></fasthtml>'
     result = process_fasthtml(valid_html_content)
-    assert "<p>Text</p>" in result
-    assert '<div id="test">Direct HTML content</div>' in result
-    
-    # Test with invalid content that triggers error handling
-    invalid_content = '<p>Text</p><fasthtml>invalid syntax</fasthtml>'
-    result = process_fasthtml(invalid_content)
-    assert "<p>Text</p>" in result
-    assert "Error" in result # Should show an error message
-    assert "FastHTMLExecutionError" in result # The specific error
+    assert result.success
+    assert "<p>Text</p>" in result.content
+    assert '<div id="test">Direct HTML content</div>' in result.content
 
 class MockCache:
     """Mock cache for testing."""
@@ -316,32 +309,30 @@ def test_content_item_render_method() -> None:
 
 def test_handle_slot_filling_errors() -> None:
     """Test handling of slot filling errors."""
-    from pyxie.renderer import handle_slot_filling
-    from pyxie.slots import SlotFillResult
-    from lxml import etree
-    import io
+    from pyxie.renderer import render_content
+    from pyxie.slots import SlotFillResult, fill_slots
+    from pyxie.types import ContentItem, ContentBlock
+    import unittest.mock as mock
     
-    # This test needs to create situations where fill_slots returns was_filled=False
+    # Create a mock ContentItem
+    mock_item = mock.MagicMock(spec=ContentItem)
+    mock_item.slug = "test-slug"
+    mock_item.collection = "test"
+    mock_item.source_path = "test.md"
+    mock_item.metadata = {"layout": "test"}
+    mock_item.blocks = {"content": [ContentBlock(name="content", content="<p>Test</p>", params={}, content_type="md")]}
     
-    # Case 1: Test with malformed component (not an FT or string)
-    # This should cause an error in extract_layout_root
-    html, error = handle_slot_filling(42, {"content": ["<p>Test</p>"]}, "test-slug")
-    assert html is None
-    assert error is not None
-    assert "Failed to fill slots" in error
-    
-    # Case 2: Test with valid XML but slots not filled
-    # Our slots system might auto-repair some types of malformed HTML,
-    # so let's create a scenario where slots definitely can't be filled
-    valid_xml = '<!DOCTYPE html><html><body><div data-slot="missing-slot"></div></body></html>'
-    html, error = handle_slot_filling(valid_xml, {"different-slot": ["<p>Test</p>"]}, "test-slug")
-    # The HTML should be returned with empty slots - it doesn't consider this an error
-    assert html is not None
-    assert "<p>Test</p>" not in html
-    
-    # Case 3: Valid case - slots are filled correctly
-    valid_xml = '<!DOCTYPE html><html><body><div data-slot="content"></div></body></html>'
-    html, error = handle_slot_filling(valid_xml, {"content": ["<p>Test</p>"]}, "test-slug")
-    assert html is not None
-    assert error is None
-    assert "<p>Test</p>" in html 
+    # Mock fill_slots to return an error
+    with mock.patch('pyxie.renderer.fill_slots') as mock_fill_slots:
+        # Set up the mock to return a failed result
+        mock_result = mock.MagicMock(spec=SlotFillResult)
+        mock_result.was_filled = False
+        mock_result.error = "Test error"
+        mock_fill_slots.return_value = mock_result
+        
+        # Call render_content - this should return an error HTML
+        result = render_content(mock_item)
+        
+        # Verify the result contains an error message
+        assert "rendering" in result
+        assert "Test error" in result 

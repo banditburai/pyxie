@@ -29,7 +29,6 @@ from .constants import (
 
 logger = logging.getLogger(__name__)
 
-# Type aliases
 PathLike = Union[str, Path]
 MetadataDict = Dict[str, Any]
 
@@ -72,35 +71,25 @@ class ContentItem:
     you can access it as:
         item.metadata["author"] or item.author
     """
-    # Required fields
     slug: str
     content: str
     source_path: Path
     content_type: ContentType = "markdown"
     
-    # Flexible metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
     
-    # Collection reference
     collection: Optional[str] = None
     
-    # Auto-populated fields
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     index: int = field(default=0)  # New field for unique indexing
-    
-    # Content blocks
-    blocks: Dict[str, List[ContentBlock]] = field(default_factory=dict)
-    
-    # Private cache reference for html rendering
-    _cache: Any = field(default=None, repr=False)
-    
-    # Reference to owning Pyxie instance
+        
+    blocks: Dict[str, List[ContentBlock]] = field(default_factory=dict)        
+    _cache: Any = field(default=None, repr=False)    
     _pyxie: Any = field(default=None, repr=False)
 
     def __post_init__(self):
         """Add metadata keys as attributes for easy access."""
-        # Ensure basic metadata exists
         if "title" not in self.metadata:
             self.metadata["title"] = self.slug.replace("-", " ").title()
             
@@ -151,7 +140,6 @@ class ContentItem:
             except (KeyError, ValueError) as e:
                 log(logger, "Types", "warning", "image", f"Failed to format template: {e}")
                 
-        # Fallback to default placeholder if we have a slug using concise ternary
         return DEFAULT_METADATA["image_template"].format(
             seed=self.slug,
             width=DEFAULT_METADATA["image_width"],
@@ -188,7 +176,6 @@ class ContentItem:
             index=data.get("index", 0)
         )
         
-        # Reconstruct blocks
         for name, block_list in data.get("blocks", {}).items():
             item.blocks[name] = [
                 ContentBlock(**block_data)

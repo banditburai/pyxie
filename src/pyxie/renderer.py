@@ -12,34 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License. 
 
-"""Convert markdown content to HTML.
-
-This module handles the conversion of markdown content to HTML,
-using mistletoe's HTML renderer.
-"""
+"""Convert markdown content to HTML using mistletoe's HTML renderer."""
 
 import logging
+import re
 from html import escape
-from typing import Dict, List, Optional, Any, TypedDict, Tuple, Protocol
+from typing import Dict, List, Optional, Any, TypedDict, Tuple, Protocol, Union, NamedTuple
+
 from mistletoe import Document
 from mistletoe.html_renderer import HTMLRenderer
-import re
+from mistletoe.block_token import Heading
+from mistletoe.span_token import RawText
 
 from .types import ContentBlock, ContentItem
 from .layouts import get_layout
 from .slots import fill_slots
 from .errors import RenderError
-from .fasthtml import (
-    process_fasthtml_in_content
-)
-from .utilities import (
-    log, 
-    extract_scripts,
-    apply_html_attributes,
-    format_error_html
-)
+from .fasthtml import process_fasthtml_in_content
+from .utilities import log, extract_scripts, apply_html_attributes, format_error_html
 
 logger = logging.getLogger(__name__)
+
+class RenderResult(NamedTuple):
+    """Result from a rendering operation."""
+    content: Optional[str] = None
+    error: Optional[str] = None
+    @property
+    def success(self) -> bool:
+        return self.error is None and self.content is not None
 
 class RenderedBlocks(TypedDict):
     """Type for rendered block collections."""
@@ -52,200 +52,199 @@ class CacheProtocol(Protocol):
 
 class PyxieHTMLRenderer(HTMLRenderer):
     """Custom HTML renderer for markdown with enhanced typography."""
-        
-    DEFAULT_WIDTH = 800
-    DEFAULT_HEIGHT = 600
+    DEFAULT_WIDTH, DEFAULT_HEIGHT = 800, 600
     PICSUM_URL = "https://picsum.photos/seed/{seed}/{width}/{height}"
     
+    def __init__(self):
+        super().__init__(process_html_tokens=True)
+        self._used_ids = set()
+    
+    def _make_id(self, text: str) -> str:
+        """Generate a unique ID for a header."""
+        base_id = re.sub(r'<[^>]+>|[^\w\s-]', '', text.lower()).strip('-') or 'section'
+        base_id = re.sub(r'[-\s]+', '-', base_id)
+        
+        header_id = base_id
+        counter = 1
+        while header_id in self._used_ids:
+            header_id = f"{base_id}-{counter}"
+            counter += 1
+            
+        self._used_ids.add(header_id)
+        return header_id
+    
+    def _get_placeholder_url(self, seed: str, width: int = None, height: int = None) -> str:
+        """Generate a placeholder image URL."""
+        width = width or self.DEFAULT_WIDTH
+        height = height or self.DEFAULT_HEIGHT
+        return self.PICSUM_URL.format(seed=seed, width=width, height=height)
+    
+    def render(self, token):
+        """Render a token to HTML using the appropriate render method."""
+        return '' if token is None else super().render(token)
+    
     def render_raw_html(self, token):
-        """Handle raw HTML blocks."""
         return token.content
         
     def render_paragraph(self, token):
-        """Custom paragraph rendering."""
         content = self.render_inner(token)
-        if content.strip().startswith('<') and content.strip().endswith('>'):
-            return content
-        return f'<p>{content}</p>'
+        return f'<p>{content}</p>' if not (content.strip().startswith('<') and content.strip().endswith('>')) else content
         
     def render_list(self, token):
-        """Custom list rendering."""
-        template = '<ul>{}</ul>'
-        if hasattr(token, 'start'):
-            template = f'<ol start="{token.start}">{{}}</ol>'
-        return template.format(self.render_inner(token))
+        tag = 'ol' if hasattr(token, 'start') else 'ul'
+        attrs = f' start="{token.start}"' if hasattr(token, 'start') else ''
+        return f'<{tag}{attrs}>{self.render_inner(token)}</{tag}>'
         
     def render_list_item(self, token):
-        """Custom list item rendering."""
         return f'<li>{self.render_inner(token)}</li>'
         
     def render_thematic_break(self, token):
-        """Custom thematic break (horizontal rule) rendering."""
         return '<hr>'
         
     def render_heading(self, token):
-        """Custom heading rendering."""
-        return f'<h{token.level}>{self.render_inner(token)}</h{token.level}>'
+        inner = self.render_inner(token)
+        header_id = self._make_id(inner)
+        return f'<h{token.level} id="{header_id}">{inner}</h{token.level}>'
         
     def render_block_code(self, token):
-        """Custom code block rendering."""
         language = token.language or ''
         return f'<pre><code class="language-{language}">{escape(token.content)}</code></pre>'
         
     def render_image(self, token) -> str:
-        """Custom image rendering with placeholder support.
+        """Custom image rendering with placeholder support."""
+        url, title, alt = token.src, getattr(token, 'title', ''), self.render_inner(token)                
         
-        Supports special syntax:
-        1. pyxie:seed - Uses default 800x600
-        2. pyxie:seed/width/height - Custom dimensions
-        3. placeholder - Uses alt text as seed with default size
-        """
-        url = token.src
-        title = getattr(token, 'title', '')                
-        alt = self.render_inner(token)                
+        # Process placeholder URLs
         if url.startswith('pyxie:'):
             parts = url[6:].split('/')
-            seed = parts[0]
-            width = parts[1] if len(parts) > 1 else self.DEFAULT_WIDTH
-            height = parts[2] if len(parts) > 2 else self.DEFAULT_HEIGHT
-            url = self.PICSUM_URL.format(seed=seed, width=width, height=height)
+            width = int(parts[1]) if len(parts) > 1 else None
+            height = int(parts[2]) if len(parts) > 2 else None
+            url = self._get_placeholder_url(parts[0], width, height)
         elif url == 'placeholder':            
             seed = re.sub(r'[^\w\s-]', '', alt.lower())
             seed = re.sub(r'[\s-]+', '-', seed).strip('-_')
-            url = self.PICSUM_URL.format(seed=seed, width=self.DEFAULT_WIDTH, height=self.DEFAULT_HEIGHT)
+            url = self._get_placeholder_url(seed)
             
         title_attr = f' title="{escape(title)}"' if title else ''
         return f'<img src="{escape(url)}" alt="{escape(alt)}"{title_attr}>'
 
-def process_fasthtml(content: str) -> str:
+def render_markdown(content: str) -> str:
+    """Render markdown content to HTML with preprocessing."""
+    if not content.strip():
+        return content
+    
+    lines = content.strip().splitlines()
+    min_indent = min((len(line) - len(line.lstrip()) for line in lines if line.strip()), default=0)
+    normalized = '\n'.join(line[min_indent:] if line.strip() else '' for line in lines)
+    
+    return PyxieHTMLRenderer().render(Document(normalized))
+
+def process_fasthtml(content: str) -> RenderResult:
     """Process FastHTML blocks in content."""
     try:
-        return process_fasthtml_in_content(content)
+        return RenderResult(content=process_fasthtml_in_content(content))
     except Exception as e:
         log(logger, "Renderer", "error", "fasthtml", f"Failed to process FastHTML: {e}")
-        return format_error_html("FastHTML", str(e))
+        return RenderResult(error=str(e))
 
-def render_markdown(content: str) -> str:
-    """Render markdown content to HTML."""
-    if not content.strip():
-        return content            
-    renderer = PyxieHTMLRenderer()
-    doc = Document(content.strip())
-    return renderer.render(doc)
-
-def process_content_parts(parts: List[Tuple[str, bool]]) -> str:
-    """Process content parts, rendering markdown for non-script parts."""
-    def render_part(part: str, is_script: bool) -> str:
-        if is_script:
-            return part
-        return render_markdown(part) if part.strip() else part
-    
-    processed_parts = [render_part(part, is_script) for part, is_script in parts]
-    return ''.join(processed_parts)
-
-def render_block(block: ContentBlock) -> str:
+def render_block(block: ContentBlock) -> RenderResult:
     """Render a content block to HTML."""
-    if not block.content:
-        # Allow empty script blocks, reject other empty blocks
-        if block.name == "script":
-            attr_str = " ".join(f'{k}="{v}"' for k, v in block.params.items())
-            return "" if not block.params else f"<script {attr_str}></script>"
-        raise RenderError("Cannot render empty content block")
+    if not block.content and block.name != "script":
+        return RenderResult(error="Cannot render empty content block")
     
     try:
         log(logger, "Renderer", "debug", "block", f"Processing block: {block.name}")
         
+        # Handle special cases
+        if block.name == "script" and not block.content:
+            if not block.params:
+                return RenderResult(content="")
+            attr_str = " ".join(f'{k}="{v}"' for k, v in block.params.items())
+            return RenderResult(content=f"<script {attr_str}></script>")
         if block.content_type == "ft":
-            return block.content
+            return RenderResult(content=block.content)
         
-        content = process_fasthtml(block.content)
-        parts = extract_scripts(content)
-        html_str = process_content_parts(parts)
+        # Process FastHTML content
+        ft_result = process_fasthtml(block.content)
+        if not ft_result.success:
+            return RenderResult(error=f"FastHTML error: {ft_result.error}")
         
-        if block.params:
-            html_str = apply_html_attributes(html_str, block.params, logger)
+        # Process content segments (scripts and markdown)
+        html_content = ''.join(
+            part if is_script else (render_markdown(part) if part.strip() else part)
+            for part, is_script in extract_scripts(ft_result.content)
+        )
         
-        return html_str
+        # Apply HTML attributes if present
+        result = apply_html_attributes(html_content, block.params, logger) if block.params else html_content
+        return RenderResult(content=result)
         
     except Exception as e:
         log(logger, "Renderer", "error", "block", f"Failed to render block '{block.name}': {e}")
-        raise RenderError(f"Failed to render block: {e}") from e
+        return RenderResult(error=f"Failed to render block: {e}")
 
 def render_blocks(blocks: Dict[str, List[ContentBlock]]) -> Dict[str, List[str]]:
     """Render multiple content blocks to HTML."""
-    rendered: Dict[str, List[str]] = {}
-    
-    for name, block_list in blocks.items():
-        try:
-            rendered[name] = [render_block(block) for block in block_list]
-        except Exception as e:
-            log(logger, "Renderer", "error", "blocks", f"Failed to render blocks '{name}': {e}")
-            raise RenderError(f"Failed to render blocks: {e}") from e
-    
-    return rendered 
+    return {
+        name: [
+            result.content if result.success else format_error_html("block", result.error)
+            for block in block_list
+            for result in [render_block(block)]
+        ] 
+        for name, block_list in blocks.items()
+    }
 
-def get_cached_content(cache: Optional[CacheProtocol], item: ContentItem) -> Optional[str]:
-    """Try to retrieve content from cache."""
-    if not cache:
-        return None
-    return cache.get(
-        item.collection or "content",
-        item.source_path,
-        item.metadata.get("layout", "default")
-    )
-
-def get_layout_instance(item: ContentItem) -> Tuple[Optional[Any], Optional[str]]:
-    """Get layout instance for content item."""
-    # Use instance's default_layout if available, otherwise fall back to "default"
-    default = getattr(item, "_pyxie", None) and getattr(item._pyxie, "default_layout", "default") or "default"
-    layout_name = item.metadata.get("layout", default)
-    layout = get_layout(layout_name)
-    
-    if not layout:
-        log(logger, "Renderer", "warning", "layout", f"Layout '{layout_name}' not found")
-        return None, f"Layout '{layout_name}' not found"
-    
-    return layout.create(item.metadata), None
-
-def apply_cache(cache: Optional[CacheProtocol], item: ContentItem, html: str) -> None:
-    """Store rendered content in cache if available."""
+def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = None) -> Tuple[Optional[str], Optional[Any], Optional[str]]:
+    """Handle caching and layout resolution in one step."""
+    # Check cache first
     if cache:
-        cache.store(
-            item.collection or "content",
-            item.source_path,
-            html,
-            item.metadata.get("layout", "default")
-        )
+        collection = item.collection or "content"
+        layout_name = item.metadata.get("layout", "default")
+        if cached := cache.get(collection, item.source_path, layout_name):
+            return cached, None, None
+    
+    # Resolve layout
+    layout_name = get_layout_name(item)
+    if layout := get_layout(layout_name):
+        return None, layout.create(item.metadata), None
+    
+    error_msg = f"Layout '{layout_name}' not found"
+    log(logger, "Renderer", "warning", "layout", error_msg)
+    return None, None, error_msg
 
-def handle_slot_filling(layout_instance: Any, rendered_blocks: Dict[str, List[str]], slug: str) -> Tuple[Optional[str], Optional[str]]:
-    """Fill slots with rendered blocks and handle errors."""
-    result = fill_slots(layout_instance, rendered_blocks)
-    
-    if not result.was_filled:
-        error_msg = f"Failed to fill slots: {result.error}"
-        log(logger, "Renderer", "error", "render", f"Failed to render {slug}: {error_msg}")
-        return None, error_msg
-    
-    return result.element, None
+def get_layout_name(item: ContentItem) -> str:
+    """Get the layout name from an item with fallback to defaults."""
+    default = getattr(item, "_pyxie", None) and getattr(item._pyxie, "default_layout", "default") or "default"
+    return item.metadata.get("layout", default)
 
 def render_content(item: ContentItem, cache: Optional[CacheProtocol] = None) -> str:
     """Render a content item to HTML using its layout and blocks."""
     try:
-        if cached_html := get_cached_content(cache, item):
+        # Try to get from cache or resolve layout
+        cached_html, layout_instance, layout_error = handle_cache_and_layout(item, cache)
+        if cached_html:
             return cached_html
-        
-        layout_instance, layout_error = get_layout_instance(item)
         if layout_error:
-            log(logger, "Renderer", "error", "render", f"Failed to render {item.slug}: {layout_error}")
             return format_error_html("rendering", layout_error)
         
+        # Render blocks and fill slots
         rendered_blocks = render_blocks(item.blocks)
+        result = fill_slots(layout_instance, rendered_blocks)
         
-        html, slot_error = handle_slot_filling(layout_instance, rendered_blocks, item.slug)
-        if slot_error:
-            return format_error_html("rendering", slot_error)
+        if not result.was_filled:
+            error_msg = f"Failed to fill slots: {result.error}"
+            log(logger, "Renderer", "error", "render", f"Failed to render {item.slug}: {error_msg}")
+            return format_error_html("rendering", error_msg)
         
-        apply_cache(cache, item, html)
+        # Save to cache if enabled
+        html = result.element
+        if cache:
+            cache.store(
+                item.collection or "content", 
+                item.source_path, 
+                html, 
+                item.metadata.get("layout", "default")
+            )
         return html
         
     except Exception as e:
