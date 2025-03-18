@@ -17,7 +17,7 @@
 import pytest
 from lxml import html, etree
 
-from pyxie.renderer import process_conditional_visibility, PYXIE_SHOW_ATTR
+from pyxie.renderer import process_conditional_visibility, PYXIE_SHOW_ATTR, check_visibility_condition
 
 
 def test_process_conditional_visibility_single_slot():
@@ -153,3 +153,93 @@ def test_process_conditional_visibility_error_handling():
     finally:
         # Restore the original function
         html.fromstring = original_fromstring 
+
+
+def test_process_conditional_visibility_negation():
+    """Test conditional visibility with negation operator."""
+    from pyxie.renderer import process_conditional_visibility
+    
+    # HTML with negation condition
+    html = '<div><p data-pyxie-show="!optional">Show when optional is not present</p><p data-pyxie-show="required">Show when required is present</p></div>'
+    
+    # Test when optional slot is NOT present (negation condition should show)
+    filled_slots = {"required"}
+    result = process_conditional_visibility(html, filled_slots)
+    assert 'Show when optional is not present' in result
+    assert 'Show when required is present' in result
+    assert 'display: none' not in result  # Both conditions met, nothing hidden
+    
+    # Test when optional slot IS present (negation condition should hide)
+    filled_slots = {"required", "optional"}
+    result = process_conditional_visibility(html, filled_slots)
+    assert 'display: none' in result  # Negation condition not met
+    assert 'Show when required is present' in result  # Normal condition met
+
+
+def test_process_conditional_visibility_complex_conditions():
+    """Test conditional visibility with complex conditions combining normal and negated slots."""
+    from pyxie.renderer import check_visibility_condition
+    
+    # Test the check_visibility_condition function directly with various combinations
+    # Basic checks
+    assert check_visibility_condition(["!missing"], {"present"}) == True
+    assert check_visibility_condition(["!present"], {"present"}) == False
+    assert check_visibility_condition(["present", "!missing"], {"present"}) == True
+    assert check_visibility_condition(["missing", "!present"], {"present"}) == False
+    
+    # Complex combinations with multiple slots
+    test_cases = [
+        # slot_names, filled_slots, expected_result
+        (["header", "!footer"], {"header"}, True),               # header=yes, footer=no
+        (["header", "!footer"], {"header", "footer"}, True),     # header=yes, footer=yes (OR logic)
+        (["content", "!sidebar"], {"content", "sidebar"}, True), # content=yes, sidebar=yes (OR logic)
+        (["content", "!sidebar"], {"sidebar"}, False),           # content=no, sidebar=yes
+        (["header", "content"], {"footer"}, False),              # neither slot is present
+        (["!header", "!footer"], {"content"}, True),             # negated slots, neither is present
+        (["!header", "!footer"], {"header", "footer"}, False),   # negated slots, both are present
+    ]
+    
+    for slot_names, filled_slots, expected_result in test_cases:
+        result = check_visibility_condition(slot_names, filled_slots)
+        assert result == expected_result, f"Failed with slot_names={slot_names}, filled_slots={filled_slots}"
+
+
+def test_process_conditional_visibility_whitespace_handling():
+    """Test conditional visibility with whitespace and complex formatting in attributes."""
+    # HTML with spaces and varied formatting in the data-pyxie-show attributes
+    html_content = f"""
+    <div>
+        <h2 {PYXIE_SHOW_ATTR}=" toc , sidebar ">Spaced values</h2>
+        <p {PYXIE_SHOW_ATTR}="  !featured_image  ,   related  ">Mixed negation with spaces</p>
+        <div {PYXIE_SHOW_ATTR}="header,  !footer,  content  ">Multiple conditions with varied spacing</div>
+    </div>
+    """
+    
+    # Test with specific slots filled
+    filled_slots = {"toc", "related", "content"}
+    result = process_conditional_visibility(html_content, filled_slots)
+    doc = html.fromstring(result)
+    
+    # All elements should be visible since their conditions are met
+    assert len(doc.xpath(f'//h2[@{PYXIE_SHOW_ATTR}=" toc , sidebar "]')) == 1
+    assert "display: none" not in doc.xpath(f'//h2[@{PYXIE_SHOW_ATTR}=" toc , sidebar "]')[0].get("style", "")
+    
+    assert len(doc.xpath(f'//p[@{PYXIE_SHOW_ATTR}="  !featured_image  ,   related  "]')) == 1
+    assert "display: none" not in doc.xpath(f'//p[@{PYXIE_SHOW_ATTR}="  !featured_image  ,   related  "]')[0].get("style", "")
+    
+    assert len(doc.xpath(f'//div[@{PYXIE_SHOW_ATTR}="header,  !footer,  content  "]')) == 1
+    assert "display: none" not in doc.xpath(f'//div[@{PYXIE_SHOW_ATTR}="header,  !footer,  content  "]')[0].get("style", "")
+    
+    # Test with different slots filled that should trigger some hiding
+    filled_slots = {"sidebar", "featured_image", "footer"}
+    result = process_conditional_visibility(html_content, filled_slots)
+    doc = html.fromstring(result)
+    
+    # First element should be visible (sidebar is filled)
+    assert "display: none" not in doc.xpath(f'//h2[@{PYXIE_SHOW_ATTR}=" toc , sidebar "]')[0].get("style", "")
+    
+    # Second element should be hidden (featured_image is filled, negating !featured_image, and related is not filled)
+    assert "display: none" in doc.xpath(f'//p[@{PYXIE_SHOW_ATTR}="  !featured_image  ,   related  "]')[0].get("style", "")
+    
+    # Third element should be hidden (header not filled, !footer negated by footer being filled, content not filled)
+    assert "display: none" in doc.xpath(f'//div[@{PYXIE_SHOW_ATTR}="header,  !footer,  content  "]')[0].get("style", "") 
