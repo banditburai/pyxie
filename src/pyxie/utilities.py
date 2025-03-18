@@ -239,6 +239,24 @@ def merge_metadata(*metadata_dicts: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             result.update({k: v for k, v in meta.items() if v is not None})
     return result
 
+def resolve_default_layout(
+    default_layout: str,
+    metadata: Dict[str, Any],
+    component_name: str,
+    logger: Optional[logging.Logger] = None
+) -> str:
+    """Resolve default layout from parameters and metadata."""    
+    metadata_layout = metadata.get("layout")
+    resolved_layout = metadata_layout if default_layout == "default" and metadata_layout else default_layout
+    
+    # Only warn if both explicit layout and different metadata layout exist
+    if default_layout != "default" and metadata_layout and metadata_layout != default_layout and logger:
+        log(logger, "Config", "warning", "init", 
+            f"Both default_layout and default_metadata['layout'] specified{' in ' + component_name if component_name else ''}. "
+            f"Using default_layout='{default_layout}'.")
+            
+    return resolved_layout
+
 def normalize_tags(tags: Any) -> List[str]:
     """Convert tags to a sorted list of unique, lowercase strings."""
     if not tags:

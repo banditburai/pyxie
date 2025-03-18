@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Iterator
 
 from .types import ContentItem, PathLike
-from .utilities import log, load_content_file
+from .utilities import log, load_content_file, resolve_default_layout
 from .errors import CollectionError
 
 logger = logging.getLogger(__name__)
@@ -47,13 +47,17 @@ class Collection:
             default_metadata: Default metadata values
         """
         self.name = name
-        self.path = Path(path) 
-        self.default_layout = default_layout        
-        self.default_metadata = default_metadata or {}        
-        if default_metadata and "layout" in default_metadata and default_metadata["layout"] != default_layout:
-            log(logger, "Config", "warning", "init", 
-                f"Both default_layout and default_metadata['layout'] specified in Collection. Using default_layout='{default_layout}'.")
-                
+        self.path = Path(path)
+        self.default_metadata = default_metadata or {}
+        
+        # Resolve default layout using helper
+        self.default_layout = resolve_default_layout(
+            default_layout=default_layout,
+            metadata=self.default_metadata,
+            component_name=f"Collection '{name}'",
+            logger=logger
+        )
+        
         self._items: Dict[str, ContentItem] = {}
         
     def __iter__(self) -> Iterator[ContentItem]:
@@ -89,14 +93,10 @@ class Collection:
         
         Args:
             file: Path to markdown file
-        """        
-        metadata = self.default_metadata.copy()
-        if "layout" in metadata:            
-            metadata["layout"] = self.default_layout
-        else:
-            metadata["layout"] = self.default_layout            
-        item = load_content_file(file, metadata, logger)
-        if item:
+        """                
+        metadata = {**self.default_metadata, "layout": self.default_layout}
+        
+        if item := load_content_file(file, metadata, logger):
             item.collection = self.name
             self._items[item.slug] = item
     

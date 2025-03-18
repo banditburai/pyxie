@@ -285,4 +285,42 @@ def test_custom_slug_support(pyxie: Pyxie) -> None:
     # Original filename should not be accessible
     nonexistent_item, error = pyxie.get_item("filename-ignored", collection="slug_test")
     assert nonexistent_item is None
-    assert error is not None 
+    assert error is not None
+
+def test_default_layout_from_metadata(test_paths: Dict[str, Path]) -> None:
+    """Test that Pyxie correctly uses layout from default_metadata when default_layout is not explicitly set."""
+    # Test when layout is in default_metadata and default_layout is left as default
+    metadata_with_layout = {"layout": "metadata_layout", "other_key": "value"}
+    
+    pyxie1 = Pyxie(
+        content_dir=test_paths['content'],
+        cache_dir=test_paths['cache'],
+        default_metadata=metadata_with_layout
+    )
+    
+    # Pyxie should use the layout specified in metadata
+    assert pyxie1.default_layout == "metadata_layout"
+    
+    # Test when both are set with different values - should warn and use default_layout
+    pyxie2 = Pyxie(
+        content_dir=test_paths['content'],
+        cache_dir=test_paths['cache'],
+        default_layout="explicit_layout",
+        default_metadata=metadata_with_layout
+    )
+    
+    # Should use the explicit default_layout
+    assert pyxie2.default_layout == "explicit_layout"
+    
+    # Test when both are the same - no warning needed
+    metadata_with_matching_layout = {"layout": "same_layout", "other_key": "value"}
+    
+    pyxie3 = Pyxie(
+        content_dir=test_paths['content'],
+        cache_dir=test_paths['cache'],
+        default_layout="same_layout",
+        default_metadata=metadata_with_matching_layout
+    )
+    
+    # Should use the common layout value
+    assert pyxie3.default_layout == "same_layout" 

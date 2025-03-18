@@ -28,7 +28,7 @@ from .constants import DEFAULT_METADATA
 from .types import ContentItem, PathLike
 from .query import Query, QueryResult
 from .cache import Cache
-from .utilities import log, load_content_file, normalize_tags
+from .utilities import log, load_content_file, normalize_tags, resolve_default_layout
 from .collection import Collection
 
 logger = logging.getLogger(__name__)
@@ -62,18 +62,17 @@ class Pyxie:
     ):
         """Initialize Pyxie content manager."""
         self.content_dir = Path(content_dir) if content_dir else None
-        self.default_layout = default_layout
+        self.default_metadata = {**DEFAULT_METADATA, **(default_metadata or {})}
         
-        if default_metadata and "layout" in default_metadata:
-            log(logger, "Config", "warning", "init", 
-                f"Both default_layout and default_metadata['layout'] specified. Using default_layout='{default_layout}'.")
-                
-        self.default_metadata = {
-            **DEFAULT_METADATA,
-            **(default_metadata or {})
-        }
+        # Resolve default layout using helper
+        self.default_layout = resolve_default_layout(
+            default_layout=default_layout,
+            metadata=self.default_metadata,
+            component_name="Pyxie",
+            logger=logger
+        )
+        
         self.cache = Cache(cache_dir) if cache_dir else None
-                
         self._collections: Dict[str, Collection] = {}
         self._items: Dict[str, ContentItem] = {}
         
