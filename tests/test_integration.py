@@ -342,3 +342,59 @@ You can reach me at test@example.com.
     assert about.metadata["title"] == "About Me"
     
     # Test complete - all basic functionality is working 
+
+def test_self_closing_tags_integration(test_dir: Path):
+    """Test that self-closing tags are properly handled through the full rendering pipeline."""
+    # Create content with various self-closing tags
+    content = """---
+title: Self-closing Tags Test
+status: published
+layout: test
+---
+<content>
+# Testing Self-closing Tags
+
+This is a paragraph with a line break <br> here.
+
+<hr>
+
+<img src="test.jpg" alt="Test image">
+
+<input type="text" placeholder="Enter text">
+</content>
+"""
+    
+    # Create the test file
+    file_path = create_test_post(test_dir, "self-closing-tags-test", content)
+    
+    # Create a Pyxie instance
+    pyxie = Pyxie(content_dir=test_dir)
+    
+    # Register test layout
+    @layout("test")
+    def test_layout(metadata=None):
+        return Div(
+            H1("Testing Self-closing Tags", data_slot="title", cls="title"),
+            Div(None, data_slot="content", cls="content"),
+            cls="test-layout"
+        )
+    
+    # Add collection and load content
+    pyxie.add_collection("content", test_dir)
+    
+    # Force reload the collection
+    pyxie._load_collection(pyxie._collections["content"])
+    
+    # Get the content item
+    item, error = pyxie.get_item("self-closing-tags-test", "content", status="published")
+    assert error is None
+    assert item is not None
+    
+    # Render the content
+    rendered = render_content(item)
+    
+    # Check that all self-closing tags are preserved in the output
+    assert "<br>" in rendered
+    assert "<hr>" in rendered
+    assert "<img" in rendered and 'src="test.jpg"' in rendered
+    assert "<input" in rendered and 'type="text"' in rendered 

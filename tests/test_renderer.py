@@ -1,8 +1,10 @@
 """Test the renderer module."""
 
+import re
 import pytest
+from unittest.mock import patch
 from mistletoe import Document
-from pyxie.renderer import PyxieHTMLRenderer, render_markdown
+from pyxie.renderer import PyxieHTMLRenderer, render_markdown, process_conditional_visibility
 from pyxie.types import ContentBlock
 
 @pytest.fixture
@@ -117,4 +119,34 @@ And one with the simple syntax:
     
     # Check that the HTML structure is correct
     assert '<h1 id="testing-image-placeholders">Testing Image Placeholders</h1>' in html
-    assert '<p>Here\'s a placeholder image:</p>' in html 
+    assert '<p>Here\'s a placeholder image:</p>' in html
+
+def test_self_closing_tags_rendering():
+    """Test that self-closing tags like <br>, <img>, etc. are rendered correctly."""
+    # Test markdown with self-closing tags
+    markdown = "Line one<br>Line two\n\n<img src='test.jpg'>\n\n<hr>\n\n<input type='text'>"
+    html = render_markdown(markdown)
+    
+    # Check that the self-closing tags are present in the rendered HTML
+    assert "<br>" in html
+    assert "<img" in html
+    assert "<hr>" in html
+    assert "<input" in html
+    
+    # Test in a layout with conditional visibility
+    html_with_tags = """
+    <div data-pyxie-show="content">
+        <p>Line one<br>Line two</p>
+        <img src='test.jpg'>
+        <hr>
+        <input type='text'>
+    </div>
+    """
+    
+    result = process_conditional_visibility(html_with_tags, {"content"})
+    
+    # Check that all self-closing tags are preserved after processing
+    assert "<br>" in result
+    assert "<img" in result
+    assert "<hr>" in result
+    assert "<input" in result 

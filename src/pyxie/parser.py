@@ -53,6 +53,7 @@ CODE_BLOCK_PATTERN = re.compile(r'```(?:\w+)?\s*\n.*?```', re.DOTALL)
 INLINE_CODE_PATTERN = re.compile(r'`[^`\n]+`')
 HTML_ENTITY_PATTERN = re.compile(r'&[a-zA-Z]+;|&#\d+;|&#x[a-fA-F0-9]+;')
 FASTHTML_BLOCK_NAMES = frozenset({'ft', 'fasthtml'})
+SELF_CLOSING_TAGS = frozenset({'br', 'img', 'input', 'hr', 'meta', 'link'})
 
 class BlockMatch(NamedTuple):
     """Structure representing a processed content block match."""
@@ -146,6 +147,9 @@ def extract_error_line(e: Exception, content: str, offset: int = 0) -> int:
 def log_unclosed_tag(tag: str, line_num: int, parent_name: Optional[str] = None, 
                     parent_line: Optional[int] = None, file_path: Optional[Path] = None) -> None:
     """Log warning about unclosed tag."""
+    if tag.lower() in SELF_CLOSING_TAGS:
+        return
+        
     if parent_name and parent_line:
         message = f"Unclosed inner tag <{tag}> at line {line_num} inside <{parent_name}> block starting at line {parent_line}"
     else:
@@ -221,6 +225,9 @@ def check_for_unclosed_tags(content: str, tag_pattern: re.Pattern, start_pos: in
         tag_pos = match.start()
         
         if should_skip_tag_validation(content, tag_pos):
+            continue
+            
+        if tag.lower() in SELF_CLOSING_TAGS:
             continue
             
         if f"</{tag}>" not in content[tag_pos:]:

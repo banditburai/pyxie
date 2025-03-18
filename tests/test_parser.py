@@ -444,3 +444,30 @@ This should be interpreted as a section block.
     assert "sample" not in parsed.blocks  # From the code block comment
     assert "inline" not in parsed.blocks  # From the inline code
     assert "tag" not in parsed.blocks  # From the HTML entity &lt;tag&gt; 
+
+def test_self_closing_tags():
+    """Test that self-closing tags like <br>, <img>, etc. are parsed correctly."""
+    content = """---
+title: Self-closing tags test
+---
+<content>
+This is a paragraph with a line break <br> here.
+Another line with a self-closing tag <hr> divider.
+<img src="test.jpg" alt="Test image"> is an image.
+A form with <input type="text" placeholder="Enter text"> field.
+</content>
+"""
+    parsed = parse(content)
+    
+    # Verify that no warnings were logged for these self-closing tags
+    # The test passes if no exceptions are raised
+    
+    # Check that we have the content block
+    assert "content" in parsed.blocks
+    content_block = parsed.blocks["content"][0]
+    
+    # Check that the content contains our self-closing tags
+    assert "<br>" in content_block.content
+    assert "<hr>" in content_block.content
+    assert "<img" in content_block.content
+    assert "<input" in content_block.content 

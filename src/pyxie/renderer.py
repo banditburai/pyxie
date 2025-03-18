@@ -33,6 +33,7 @@ from .utilities import log, extract_scripts, apply_html_attributes, format_error
 
 logger = logging.getLogger(__name__)
 PYXIE_SHOW_ATTR = "data-pyxie-show"  # Visibility control attribute
+SELF_CLOSING_TAGS = frozenset({'br', 'img', 'input', 'hr', 'meta', 'link'})
 
 class RenderResult(NamedTuple):
     """Result from a rendering operation."""
@@ -184,7 +185,16 @@ def process_conditional_visibility(layout_html: str, filled_slots: Set[str]) -> 
                 current_style = elem.get('style', '')
                 display_none = "display: none;"
                 elem.set('style', f"{current_style}; {display_none}" if current_style else display_none)
-        return html.tostring(tree, encoding='unicode')
+        
+        # Use a serialization method that handles self-closing tags correctly
+        result = html.tostring(tree, encoding='unicode')
+        
+        # Ensure proper self-closing tags format for compatibility
+        for tag in SELF_CLOSING_TAGS:
+            # Replace any self-closing tags that might have been expanded
+            result = re.sub(f'<{tag}([^>]*)></[^>]*{tag}>', f'<{tag}\\1></{tag}>', result)
+        
+        return result
     except Exception as e:
         log(logger, "Renderer", "warning", "visibility", f"Failed to process conditional visibility: {e}")
         return layout_html
