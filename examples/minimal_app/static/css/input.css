@@ -1,0 +1,36 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  exclude: rootcolor, scrollbar;
+  themes: light --preferslight, dark --prefersdark;
+}
+
+@plugin "@tailwindcss/typography";
+@variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+@layer base {
+:root,
+[data-theme] {
+  background-color: var(--root-bg, var(--color-base-300));
+  color: var(--color-base-content);
+} 
+
+:root {
+  scrollbar-color: color-mix(in oklch, currentColor 35%, #0000) #0000;
+}
+
+html, body {
+  height: 100%;
+}
+}
+
+@layer components {
+    .post-card {
+      position: relative;
+      cursor: pointer;
+    }
+    
+    .post-card .category-link {
+      position: relative;
+      z-index: 2;
+    }
+
+  }

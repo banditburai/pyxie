@@ -1,0 +1,10 @@
+[project]
+name = "minimal-app"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+   "python-fasthtml>=0.12.4",
+   "pyx2>=0.1.1",
+]
