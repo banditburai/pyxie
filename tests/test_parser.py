@@ -1,10 +1,14 @@
 """Tests for the parser module."""
 
-import pytest
 import logging
+import pytest
 from typing import Dict, List, Optional, Any
-from pyxie.parser import parse, iter_blocks, parse_frontmatter, ContentBlock, ParsedContent
+from pyxie.parser import parse, iter_blocks, parse_frontmatter, ContentBlock, ParsedContent, HTML_TAGS
 from pyxie.errors import ParseError, FrontmatterError, BlockError
+from pathlib import Path
+from pytest import raises
+import yaml
+from textwrap import dedent
 
 # Test fixtures
 @pytest.fixture
@@ -641,3 +645,45 @@ This is an example block
     note_block = parsed.get_block("note")
     assert note_block is not None
     assert "note" in note_block.content 
+
+def test_html_tags_in_real_content(caplog):
+    """Test that HTML tags in real content files don't trigger unclosed tag warnings."""
+    # Path to the markdown-features.md file
+    file_path = Path("examples/minimal_app/content/posts/markdown-features.md")
+    
+    # Ensure the file exists
+    assert file_path.exists(), f"Test file not found: {file_path}"
+    
+    # Read the content
+    content = file_path.read_text()
+    
+    # Set log level to capture warnings
+    caplog.set_level(logging.WARNING)
+    
+    # Parse the content
+    parsed = parse(content, file_path)
+    
+    # Print the blocks keys to help with debugging
+    print(f"Found blocks: {list(parsed.blocks.keys())}")
+    
+    # Verify that HTML tags aren't flagged as unclosed
+    html_tags_warned = []
+    for record in caplog.records:
+        if "Unclosed inner tag" in record.message:
+            tag = record.message.split("<")[1].split(">")[0]
+            if tag.lower() in HTML_TAGS:
+                html_tags_warned.append(tag)
+    
+    # Assert that no HTML tags were warned about
+    assert not html_tags_warned, f"HTML tags incorrectly flagged as unclosed: {html_tags_warned}"
+    
+    # Check for specific HTML-related blocks that should be parsed
+    html_tags_parsed = [block_name for block_name in parsed.blocks.keys() 
+                       if block_name.lower() in HTML_TAGS]
+    
+    # We expect HTML tags like div, a to be parsed without warnings
+    assert len(html_tags_parsed) > 0, "No HTML tags were parsed"
+    
+    # Verify at least some expected HTML blocks
+    assert "div" in parsed.blocks, "Expected <div> to be properly parsed"
+    assert "a" in parsed.blocks, "Expected <a> tags to be properly parsed" 

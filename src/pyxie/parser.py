@@ -18,29 +18,15 @@ import re
 import logging
 from dataclasses import dataclass
 from itertools import chain
-from typing import Dict, Iterator, List, Optional, Tuple, Any, NamedTuple, DefaultDict
+from typing import Dict, Iterator, List, Optional, Tuple, Any, NamedTuple
 from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
 
 from .constants import DEFAULT_METADATA
-from .types import (
-    ContentBlock,
-    ContentProvider,
-    Metadata,
-)
-from .utilities import (
-    merge_metadata,
-    normalize_tags,
-    parse_date,
-    log,
-    get_line_number,
-    convert_value,
-    is_float
-)
+from .types import ContentBlock, ContentProvider, Metadata
+from .utilities import merge_metadata, log, get_line_number, convert_value
 from .errors import BlockError, FrontmatterError, ParseError
 from .params import parse_params
-from .fasthtml import is_fasthtml_block
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +37,27 @@ XML_TAG_PATTERN = re.compile(r'<(?P<tag>\w+)(?:\s+(?P<params>[^>]*))?>\s*(?P<con
 UNCLOSED_TAG_PATTERN = re.compile(r'<(?P<tag>\w+)(?:\s+[^>]*)?>', re.DOTALL)
 LINE_NUMBER_PATTERN = re.compile(r'line (\d+)', re.IGNORECASE)
 CODE_BLOCK_PATTERN = re.compile(r'```(?:[\w+-]*)(?:\s*\n).*?```', re.DOTALL)
-INLINE_CODE_PATTERN = re.compile(r'`[^`\n]+`')
+INLINE_CODE_PATTERN = re.compile(r'`[^`]+`')
+LIST_ITEM_CODE_PATTERN = re.compile(r'- `<[^>]+>`:', re.MULTILINE)
 HTML_ENTITY_PATTERN = re.compile(r'&[a-zA-Z]+;|&#\d+;|&#x[a-fA-F0-9]+;')
 
 # Constants
 FASTHTML_BLOCK_NAMES = frozenset({'ft', 'fasthtml'})
-SELF_CLOSING_TAGS = frozenset({'br', 'img', 'input', 'hr', 'meta', 'link'})
+
+# Common HTML tags to skip validation for
+HTML_TAGS = {
+    'div', 'span', 'p', 'a', 'button', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'ul', 'ol', 'li', 'table', 'tr', 'td', 'th', 'form', 'input', 'select', 
+    'option', 'label', 'code', 'pre', 'strong', 'em', 'i', 'b'
+}
+
+# Self-closing tags that don't need validation
+SELF_CLOSING_TAGS = {
+    'img', 'br', 'hr', 'input', 'meta', 'link', 'area', 'base', 'col', 'embed', 'param', 'source',
+}
+
+# Tags that should be skipped during parsing
+IGNORED_TAGS = SELF_CLOSING_TAGS.copy()
 
 class BlockMatch(NamedTuple):
     """Structure representing a processed content block match."""
@@ -73,151 +74,106 @@ class ParsedContent(ContentProvider):
 
     def get_block(self, name: str, index: Optional[int] = None) -> Optional[ContentBlock]:
         """Get content block by name and optional index."""
-        if name not in self.blocks:
-            return None
+        if name not in self.blocks: return None
         blocks = self.blocks[name]
-        return blocks[index if index is not None else 0] if blocks and (index is None or 0 <= index < len(blocks)) else None
+        return blocks[index or 0] if blocks and (index is None or 0 <= index < len(blocks)) else None
     
     def get_blocks(self, name: str) -> List[ContentBlock]:
         """Get all blocks with given name."""
         return self.blocks.get(name, [])
 
-def find_line_for_key(yaml_text: str, key: str) -> int:
-    """Find line number where a key appears in YAML text."""
-    lines = yaml_text.splitlines()
-    for i, line in enumerate(lines, 1):
-        if str(key) in line:
-            return i
-    return 0
-
-def find_code_blocks(content: str) -> List[Tuple[int, int]]:
-    """Find all code blocks in content and return their ranges."""
-    return [(match.start(), match.end()) for match in CODE_BLOCK_PATTERN.finditer(content)]
+def find_ranges(content: str, pattern: re.Pattern, extra_chars: int = 0) -> List[Tuple[int, int]]:
+    """Find all matches for a regex pattern and return their ranges."""
+    return [(m.start(), m.end() + extra_chars) for m in pattern.finditer(content)]
 
 def is_in_code_block(content: str, position: int, code_blocks: Optional[List[Tuple[int, int]]] = None) -> bool:
     """Check if position is inside a code block or inline code."""
-    # Use precomputed code blocks if provided
-    if code_blocks:
+    if code_blocks is not None:
         return any(start <= position < end for start, end in code_blocks)
-    
-    # Otherwise compute on demand
-    code_ranges = chain(
-        ((m.start(), m.end()) for m in CODE_BLOCK_PATTERN.finditer(content)),
-        ((m.start(), m.end()) for m in INLINE_CODE_PATTERN.finditer(content))
-    )
-    return any(start <= position < end for start, end in code_ranges)
+    return any(start <= position < end for start, end in chain(
+        find_ranges(content, CODE_BLOCK_PATTERN),
+        find_ranges(content, INLINE_CODE_PATTERN)
+    ))
 
-def is_html_entity(content: str, position: int) -> bool:
-    """Check if position is part of an HTML entity like &lt; or &#x3C;."""
-    return any(m.start() <= position < m.end() for m in HTML_ENTITY_PATTERN.finditer(content))
-
-def should_skip_validation(content: str, position: int, code_blocks: Optional[List[Tuple[int, int]]] = None) -> bool:
-    """Determine if tag validation should be skipped at position."""
-    return is_in_code_block(content, position, code_blocks) or is_html_entity(content, position)
-
-def extract_valid_metadata(frontmatter_text: str) -> Dict[str, Any]:
-    """Extract valid key-value pairs from frontmatter text."""
-    return {
-        key.strip(): convert_value(value.strip())
-        for line in frontmatter_text.splitlines()
-        if line.strip() and not line.strip().startswith('#') and ':' in line and line.count(':') == 1
-        for key, value in [line.split(':', 1)]
-        if key.strip() and ':' not in key.strip()
-    }
-
-def extract_error_line(e: Exception, content: str, offset: int = 0) -> int:
-    """Extract line number from exception message."""
-    if "line " not in str(e).lower():
-        return 0
-    match = LINE_NUMBER_PATTERN.search(str(e))
-    return offset + int(match.group(1)) - 1 if match else 0
+def should_ignore_tag(content: str, tag_pos: int, tag: str, 
+                     code_blocks: List[Tuple[int, int]],
+                     inline_spans: List[Tuple[int, int]], 
+                     list_item_spans: List[Tuple[int, int]]) -> bool:
+    """Determine if a tag should be ignored based on context."""
+    # Skip tags in code blocks or those that don't need closing
+    if is_in_code_block(content, tag_pos, code_blocks) or tag.lower() in IGNORED_TAGS:
+        return True
+    # Skip tags in inline code or list items
+    if any(start <= tag_pos < end for spans in [inline_spans, list_item_spans] for start, end in spans):
+        return True
+    # Check if tag is in documentation context
+    line_with_tag = content[:tag_pos].split('\n')[-1] + content[tag_pos:].split('\n')[0]
+    if '`<' in line_with_tag or '<`' in line_with_tag or '- <' in line_with_tag:
+        return True
+    # Skip if in example context
+    preceding_text = content[max(0, tag_pos-20):tag_pos]
+    return "example" in preceding_text.lower() or "xml" in preceding_text.lower()
 
 def log_tag_warning(tag: str, line_num: int, parent_name: Optional[str] = None, 
-                   parent_line: Optional[int] = None, file_path: Optional[Path] = None) -> None:
+                  parent_line: Optional[int] = None, file_path: Optional[Path] = None) -> None:
     """Log warning about unclosed tag."""
-    if tag.lower() in SELF_CLOSING_TAGS:
-        return
-        
-    message = (
-        f"Unclosed inner tag <{tag}> at line {line_num} inside <{parent_name}> block starting at line {parent_line}"
-        if parent_name and parent_line else
-        f"Unclosed block <{tag}> at line {line_num}"
-    )
+    message = f"Unclosed inner tag <{tag}> at line {line_num} inside <{parent_name}> block starting at line {parent_line}" \
+        if parent_name and parent_line else f"Unclosed block <{tag}> at line {line_num}"
     log(logger, "Parser", "warning", "blocks", message, file_path)
 
 def find_closing_tag(content: str, tag: str, start_pos: int, code_blocks: List[Tuple[int, int]]) -> int:
     """Find the matching closing tag that's not in a code block."""
     closing_tag = f"</{tag}>"
     pos = start_pos
-    
     while pos < len(content):
         pos = content.find(closing_tag, pos)
-        if pos == -1:
-            return -1
-        if not is_in_code_block(content, pos, code_blocks):
-            return pos
+        if pos == -1: return -1
+        if not is_in_code_block(content, pos, code_blocks): return pos
         pos += 1
-        
     return -1
-
-def has_unclosed_inner_tags(block_content: str, parent_tag: str, parent_line: int) -> bool:
-    """Check if content has unclosed inner tags and log warnings."""
-    code_blocks = find_code_blocks(block_content)
-    
-    for match in UNCLOSED_TAG_PATTERN.finditer(block_content):
-        inner_tag = match.group('tag')
-        
-        # Skip self-closing tags or tags in code blocks
-        if inner_tag.lower() in SELF_CLOSING_TAGS or is_in_code_block(block_content, match.start(), code_blocks):
-            continue
-            
-        # Check if tag is closed
-        inner_tag_line = get_line_number(block_content, match.start())
-        closing_pos = find_closing_tag(block_content, inner_tag, match.end(), code_blocks)
-        
-        if closing_pos == -1:
-            logger.warning(f"Unclosed inner tag <{inner_tag}> at line {inner_tag_line} inside <{parent_tag}> block starting at line {parent_line}")
-            return True
-    
-    return False
 
 def check_for_unclosed_tags(content: str, start_pos: int = 0, 
                            parent_info: Optional[Tuple[str, int]] = None,
-                           file_path: Optional[Path] = None) -> None:
-    """Check for unclosed tags in content and log warnings."""
+                           file_path: Optional[Path] = None) -> bool:
+    """Check for unclosed tags in content and log warnings. Returns True if unclosed tags found."""
     parent_name, parent_line = parent_info or (None, None)
-    code_blocks = find_code_blocks(content)
+    code_blocks = find_ranges(content, CODE_BLOCK_PATTERN)
+    inline_spans = find_ranges(content, INLINE_CODE_PATTERN)
+    list_item_spans = find_ranges(content, LIST_ITEM_CODE_PATTERN, 50)
+    has_unclosed = False
     
     for match in UNCLOSED_TAG_PATTERN.finditer(content, start_pos):
         tag = match.group('tag')
         tag_pos = match.start()
         
-        # Skip tags that should be ignored
-        if is_in_code_block(content, tag_pos, code_blocks) or tag.lower() in SELF_CLOSING_TAGS:
+        # Skip tags that should be ignored based on context
+        if should_ignore_tag(content, tag_pos, tag, code_blocks, inline_spans, list_item_spans):
             continue
         
-        # Check if closed
+        # Check if tag is closed
         if find_closing_tag(content, tag, tag_pos + 1, code_blocks) == -1:
             log_tag_warning(tag, get_line_number(content, tag_pos), parent_name, parent_line, file_path)
+            has_unclosed = True
+    
+    return has_unclosed
 
 def find_content_blocks(content: str, start_pos: int = 0, parent_info: Optional[Tuple[str, int]] = None) -> List[ContentBlock]:
     """Find all content blocks in the given content."""
     blocks = []
     parent_name, parent_line = parent_info or (None, None)
-    code_blocks = find_code_blocks(content)
+    code_blocks = find_ranges(content, CODE_BLOCK_PATTERN)
     pos = start_pos
     
     # Find potential tags
     while pos < len(content):
         opening_match = re.search(r'<(\w+)(?:\s+[^>]*)?>', content[pos:], re.DOTALL)
-        if not opening_match:
-            break
+        if not opening_match: break
             
         tag_name = opening_match.group(1)
         tag_start = pos + opening_match.start()
         
         # Skip if tag should be ignored
-        if tag_name.lower() in SELF_CLOSING_TAGS or is_in_code_block(content, tag_start, code_blocks):
+        if tag_name.lower() in IGNORED_TAGS or is_in_code_block(content, tag_start, code_blocks):
             pos = tag_start + 1
             continue
             
@@ -234,7 +190,8 @@ def find_content_blocks(content: str, start_pos: int = 0, parent_info: Optional[
         block_content = content[match_end:closing_pos].strip()
         tag_line = get_line_number(content, tag_start)
         
-        if has_unclosed_inner_tags(block_content, tag_name, tag_line):
+        # Check for unclosed inner tags and skip if found
+        if check_for_unclosed_tags(block_content, 0, (tag_name, tag_line), None):
             pos = tag_start + 1
             continue
         
@@ -259,7 +216,6 @@ def find_content_blocks(content: str, start_pos: int = 0, parent_info: Optional[
 
 def iter_blocks(content: str, file_path: Optional[Path] = None) -> Iterator[ContentBlock]:
     """Iterate through content blocks in text."""
-    # File path parameter is kept for backward compatibility
     yield from find_content_blocks(content)
 
 def find_tag_line_number(content: str, tag_name: str, start_pos: int = 0) -> int:
@@ -268,14 +224,28 @@ def find_tag_line_number(content: str, tag_name: str, start_pos: int = 0) -> int
     match = tag_pattern.search(content, start_pos)
     return get_line_number(content, match.start()) if match else 0
 
+def extract_error_line(e: Exception, content: str, offset: int = 0) -> int:
+    """Extract line number from exception message."""
+    match = LINE_NUMBER_PATTERN.search(str(e))
+    return offset + int(match.group(1)) - 1 if match else 0
+
+def extract_valid_metadata(frontmatter_text: str) -> Dict[str, Any]:
+    """Extract valid key-value pairs from frontmatter text."""
+    result = {}
+    for line in frontmatter_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#') or ':' not in line or line.count(':') > 1: continue
+        parts = line.split(':', 1)
+        key = parts[0].strip()
+        if not key or ':' in key: continue
+        result[key] = convert_value(parts[1].strip())
+    return result
+
 def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
     """Parse YAML frontmatter from content."""
-    if not content.strip().startswith('---'):
-        return {}, content
-    if empty_match := EMPTY_FRONTMATTER_PATTERN.match(content):
-        return {}, empty_match.group('content')
-    if not (match := FRONTMATTER_PATTERN.match(content)):
-        return {}, content
+    if not content.strip().startswith('---'): return {}, content
+    if empty_match := EMPTY_FRONTMATTER_PATTERN.match(content): return {}, empty_match.group('content')
+    if not (match := FRONTMATTER_PATTERN.match(content)): return {}, content
         
     frontmatter_text, remaining_content = match.group('frontmatter'), match.group('content')
     line_offset = get_line_number(content, match.start(1))
@@ -287,11 +257,8 @@ def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
         if not isinstance(metadata, dict):
             raise FrontmatterError(f"Frontmatter must be a dictionary, got {type(metadata).__name__}")
             
-        # Validate keys
-        valid_metadata = {k: v for k, v in metadata.items() 
-                         if ':' not in str(k) or k.count(':') <= 1}
-        
-        return valid_metadata, remaining_content
+        # Validate keys and return valid metadata
+        return {k: v for k, v in metadata.items() if ':' not in str(k) or k.count(':') <= 1}, remaining_content
     except Exception as e:
         malformed_line_num = extract_error_line(e, content, line_offset)
         log(logger, "Parser", "warning", "frontmatter", 
