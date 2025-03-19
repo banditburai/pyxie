@@ -36,7 +36,7 @@ iconify_script = Script(src="https://cdn.jsdelivr.net/npm/iconify-icon@2.0.0/dis
 
 pyxie = Pyxie(
     POSTS_DIR,
-    # cache_dir=CACHE_DIR,  # Comment out to disable caching
+    cache_dir=CACHE_DIR,  # Comment out to disable caching
     default_metadata=DEFAULT_POST_METADATA,    
     # layout_paths=[BASE_DIR / "layouts"] # pass in a directory of layouts to use, 
 )                                         # it will auto discover them from layouts/templates/or static
@@ -440,5 +440,15 @@ def get_post(slug: str):
 def category_page(category: str, page: int = 1, sort: str = DEFAULT_SORT):  
     return article_page(page=page, sort=sort, category=category.replace('-', ' ').title())
 
-if __name__ == "__main__":      
-    serve(reload=False, port=5002)
+# if __name__ == "__main__":      
+#     serve(reload=False, port=5002)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=5001,
+        log_level="info",
+        reload=False
+    )
