@@ -32,7 +32,7 @@ from .errors import (
 from .renderer import render_content, render_markdown, render_block, render_blocks
 from .collection import Collection
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 # Add html property directly to ContentItem
 # This avoids circular imports while keeping the API clean
