@@ -471,3 +471,173 @@ A form with <input type="text" placeholder="Enter text"> field.
     assert "<hr>" in content_block.content
     assert "<img" in content_block.content
     assert "<input" in content_block.content 
+
+def test_xml_tags_in_markdown_examples():
+    """Test that XML-like tags in markdown code examples are not treated as content blocks."""
+    content = """---
+title: Test Document with Markdown Examples
+---
+
+<content>
+Here is a markdown example:
+
+```markdown
+---
+title: "Simple Post"
+date: 2024-03-19
+author: "Author"
+---
+<content>
+# My Content
+
+Regular markdown content here...
+</content>
+```
+
+And another example:
+
+```markdown
+<featured_image>
+![Hero Image](path/to/image.jpg)
+</featured_image>
+
+<content>
+# Main Content
+
+Your content here...
+</content>
+```
+</content>
+"""
+    
+    parsed = parse(content)
+    
+    # Check that only the outer content block is found
+    assert len(parsed.blocks) == 1
+    assert "content" in parsed.blocks
+    
+    # Check that the content block contains both code examples
+    content_block = parsed.get_block("content")
+    assert "```markdown" in content_block.content
+    assert "<content>" in content_block.content
+    assert "<featured_image>" in content_block.content
+
+def test_nested_xml_tags_in_code_blocks():
+    """Test that nested XML-like tags in code blocks are not treated as content blocks."""
+    content = """---
+title: Test Document with Nested Tags
+---
+
+<content>
+Here is a code example with nested tags:
+
+```python
+def process_content():
+    # Example with nested tags
+    content = '''
+    <outer>
+        <inner>
+            <deeper>
+                Content here
+            </deeper>
+        </inner>
+    </outer>
+    '''
+    return content
+```
+
+And a markdown example with nested tags:
+
+```markdown
+<layout>
+    <header>
+        <nav>
+            <menu>
+                <item>Home</item>
+                <item>About</item>
+            </menu>
+        </nav>
+    </header>
+    <main>
+        <content>
+            Main content here
+        </content>
+    </main>
+</layout>
+```
+</content>
+"""
+    
+    parsed = parse(content)
+    
+    # Check that only the outer content block is found
+    assert len(parsed.blocks) == 1
+    assert "content" in parsed.blocks
+    
+    # Check that none of the nested tags in code blocks are treated as content blocks
+    assert "outer" not in parsed.blocks
+    assert "inner" not in parsed.blocks
+    assert "deeper" not in parsed.blocks
+    assert "layout" not in parsed.blocks
+    assert "header" not in parsed.blocks
+    assert "nav" not in parsed.blocks
+    assert "menu" not in parsed.blocks
+    assert "item" not in parsed.blocks
+    assert "main" not in parsed.blocks
+
+def test_mixed_xml_tags_in_code_and_content():
+    """Test handling of XML tags in both code blocks and regular content."""
+    content = """---
+title: Test Document with Mixed Tags
+---
+
+<content>
+Here is a real content block with a <highlight>highlighted</highlight> section.
+
+And a code example with XML-like tags:
+
+```python
+def example():
+    # This has XML-like tags that should be ignored
+    template = '''
+    <template>
+        <header>Title</header>
+        <body>Content</body>
+    </template>
+    '''
+    return template
+```
+
+And another real content block with a <note>note</note> section.
+
+And a markdown example:
+
+```markdown
+<example>
+This is an example block
+</example>
+```
+</content>
+"""
+    
+    parsed = parse(content)
+    
+    # Check that only the real content blocks are found
+    assert "content" in parsed.blocks
+    assert "highlight" in parsed.blocks
+    assert "note" in parsed.blocks
+    
+    # Check that tags in code blocks are not treated as content blocks
+    assert "template" not in parsed.blocks
+    assert "header" not in parsed.blocks
+    assert "body" not in parsed.blocks
+    assert "example" not in parsed.blocks
+    
+    # Check the content of the real blocks
+    highlight_block = parsed.get_block("highlight")
+    assert highlight_block is not None
+    assert "highlighted" in highlight_block.content
+    
+    note_block = parsed.get_block("note")
+    assert note_block is not None
+    assert "note" in note_block.content 
