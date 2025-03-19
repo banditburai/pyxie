@@ -298,7 +298,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "python-fasthtml", specifier = ">=0.12.4" },
-    { name = "pyx2", specifier = ">=0.1.1" },
+    { name = "pyx2", specifier = ">=0.1.2" },
 ]
 
 [[package]]
@@ -448,7 +448,7 @@ wheels = [
 
 [[package]]
 name = "pyx2"
-version = "0.1.1"
+version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lxml" },
@@ -456,9 +456,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-fasthtml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6b/5c/c496b46c218a81c4cbd3a6a62a0a6ee7ed5fb36fc1d8ed675c3721444e79/pyx2-0.1.1.tar.gz", hash = "sha256:19578cc3473bc4ceb24260916f5c5158dde60981eb42c95edbac7db1974115d8", size = 112199 }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/eb/73ab90917338ab3de6d32c9cd84a9532eb1cea35c585ae8d8b67220540ac/pyx2-0.1.2.tar.gz", hash = "sha256:4889a7f016e5adce18e976eb7ea0a73818a4d123d53652cd9846bce38fa4d723", size = 197052 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/35/71/7b235248ec94ed120b8cd6e68005f8cbb24dd4212768d6e792f38cbb3dc8/pyx2-0.1.1-py3-none-any.whl", hash = "sha256:852ca7eab4ea54f75a8487bd853844cc6bed116b511bd7ae23b91ca3604d223e", size = 45420 },
+    { url = "https://files.pythonhosted.org/packages/70/9b/d177eb2f83ba294cf4af8498c80641142d42bc0eac955f7da4e043e42de8/pyx2-0.1.2-py3-none-any.whl", hash = "sha256:1b929cec2d88fef51df659a7507d4133bff893543ed99fd2e9117caaea06461a", size = 50115 },
 ]
 
 [[package]]
