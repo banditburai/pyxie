@@ -37,14 +37,6 @@ DEFAULT_CURSOR_LIMIT = 10
 
 Q = TypeVar('Q', bound=Query)
 
-def apply_pagination(query: Q, page: Optional[int], per_page: Optional[int], 
-                   offset: Optional[int], limit: Optional[int]) -> Q:
-    """Apply pagination parameters to a query."""    
-    if page is not None:
-        return query.page(page, per_page or DEFAULT_PER_PAGE)
-    
-    return query.offset(offset or 0).limit(limit) if offset or limit else query
-
 class Pyxie:
     """Main class for content management and rendering."""
     
@@ -79,63 +71,6 @@ class Pyxie:
             self.add_collection("content", self.content_dir)                    
         if auto_discover_layouts:
             registry.discover_layouts(self.content_dir, layout_paths)
-    
-    def discover_layouts(self, layout_paths: Optional[List[PathLike]] = None) -> None:
-        """Discover and register layouts from Python modules in the project.
-        
-        If no paths are provided, it checks:
-        1. The project root directory (where content_dir parent is located)
-        2. Common layout directories (layouts, templates, static)
-        
-        Args:
-            layout_paths: Optional list of specific directories to search for layouts
-        """
-        if not layout_paths and (not self.content_dir or not self.content_dir.parent):
-            return
-            
-        if not layout_paths:
-            app_dir = self.content_dir.parent
-            layout_paths = [app_dir]  # Start with project root
-            
-            for dirname in ["layouts", "templates", "static"]:
-                path = app_dir / dirname
-                if path.exists() and path.is_dir():
-                    layout_paths.append(path)
-        
-        for path in [Path(p) for p in layout_paths]:
-            if not path.exists() or not path.is_dir():
-                log(logger, "Layouts", "warning", "discover", f"Layout directory not found: {path}")
-                continue
-                            
-            if path == getattr(self.content_dir, 'parent', None):
-                self._process_layout_files(list(path.glob("*.py")))
-            else:
-                self._process_layout_files(list(path.glob("**/*.py")))
-    
-    def _process_layout_files(self, python_files: List[Path]) -> None:
-        """Process Python files to find and register layouts.
-        
-        Args:
-            python_files: Iterator of Path objects for Python files
-        """
-        for python_file in python_files:
-            try:
-                module_name = python_file.stem
-                spec = importlib.util.spec_from_file_location(module_name, python_file)
-                if not spec or not spec.loader:
-                    continue
-                    
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                
-                for obj_name, obj in inspect.getmembers(module, 
-                                                      lambda o: inspect.isfunction(o) and hasattr(o, '_layout_name')):
-                    log(logger, "Layouts", "debug", "discover", 
-                        f"Found layout: {obj._layout_name} in {python_file.name}")
-                        
-            except Exception as e:
-                log(logger, "Layouts", "error", "discover", 
-                    f"Error loading layout file {python_file}: {str(e)}")
     
     @property
     def collections(self) -> List[str]:
@@ -227,7 +162,7 @@ class Pyxie:
         cursor_field: str, 
         cursor_value: Any, 
         limit: Optional[int], 
-        direction: str
+        direction: str = "forward"
     ) -> Q:
         """Apply cursor-based pagination."""
         return query.cursor(
@@ -246,7 +181,9 @@ class Pyxie:
         limit: Optional[int]
     ) -> Q:
         """Apply offset-based pagination."""
-        return apply_pagination(query, page, per_page, offset, limit)
+        if page is not None:
+            return query.page(page, per_page or DEFAULT_PER_PAGE)
+        return query.offset(offset or 0).limit(limit) if offset or limit else query
     
     def get_items(
         self,
@@ -378,4 +315,17 @@ class Pyxie:
                 
                 return await call_next(request)
         
-        return Middleware(MarkdownMiddleware)        
+        return Middleware(MarkdownMiddleware)
+
+    def rebuild_content(self) -> None:
+        """Rebuild all content collections."""
+        # Clear existing items
+        self._items.clear()
+        
+        # Reload all collections
+        for collection in self._collections.values():
+            self._load_collection(collection)
+            
+        # Invalidate cache if it exists
+        if self.cache:
+            self.cache.invalidate()        
