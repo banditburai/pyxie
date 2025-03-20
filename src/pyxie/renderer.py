@@ -14,11 +14,11 @@
 
 """Convert markdown content to HTML using mistletoe's HTML renderer."""
 
-import logging
+from typing import Dict, List, Optional, Any, Protocol, NamedTuple, Set, Tuple
+from functools import lru_cache
 import re
 from html import escape
-from typing import Dict, List, Optional, Any, Protocol, Union, NamedTuple, Set, Tuple
-from functools import lru_cache
+import logging
 
 from mistletoe import Document
 from mistletoe.html_renderer import HTMLRenderer
@@ -26,10 +26,8 @@ from lxml import html
 
 from .types import ContentBlock, ContentItem
 from .layouts import get_layout
-from .slots import fill_slots
-from .errors import RenderError
-from .fasthtml import process_fasthtml_in_content
-from .utilities import log, extract_scripts, apply_html_attributes, format_error_html
+from .fasthtml import process_fasthtml_in_content, is_fasthtml_content
+from .utilities import log, format_error_html
 
 logger = logging.getLogger(__name__)
 PYXIE_SHOW_ATTR = "data-pyxie-show"  # Visibility control attribute
@@ -106,15 +104,19 @@ class PyxieHTMLRenderer(HTMLRenderer):
 @lru_cache(maxsize=32)
 def render_markdown(content: str) -> str:
     """Render markdown content to HTML with preprocessing."""
-    if not content.strip(): return content
+    if not content.strip():
+        return content
     
     # Normalize indentation in content
     lines = content.strip().splitlines()
-    if not lines: return ""
+    if not lines:
+        return ""
     
     min_indent = min((len(line) - len(line.lstrip()) for line in lines if line.strip()), default=0)
-    normalized = '\n'.join(line[min_indent:] if line.strip() else '' for line in lines)
-    return PyxieHTMLRenderer().render(Document(normalized))
+    content = "\n".join(line[min_indent:] for line in lines)
+    
+    # Convert markdown to HTML
+    return PyxieHTMLRenderer().render(Document(content))
 
 def process_fasthtml(content: str) -> RenderResult:
     """Process FastHTML blocks in content."""
@@ -124,37 +126,31 @@ def process_fasthtml(content: str) -> RenderResult:
         log(logger, "Renderer", "error", "fasthtml", f"Failed to process FastHTML: {e}")
         return RenderResult(error=str(e))
 
-def render_block(block: ContentBlock) -> RenderResult:
+def render_block(block: ContentBlock, cache: Optional[CacheProtocol] = None) -> RenderResult:
     """Render a content block to HTML."""
-    if not block.content and block.name != "script":
-        return RenderResult(error="Cannot render empty content block")
-    
     try:
-        log(logger, "Renderer", "debug", "block", f"Processing block: {block.name}")
-        
         # Handle special cases
         if block.name == "script" and not block.content:
-            if not block.params: return RenderResult(content="")
+            if not block.params:
+                return RenderResult(content="")
             attr_str = " ".join(f'{k}="{v}"' for k, v in block.params.items())
             return RenderResult(content=f"<script {attr_str}></script>")
-        if block.content_type == "ft": return RenderResult(content=block.content)
+        if block.content_type == "ft":
+            return RenderResult(content=block.content)
+        
+        # Handle empty content
+        if not block.content.strip():
+            return RenderResult(error="Cannot render empty content block")
         
         # Process FastHTML content
-        ft_result = process_fasthtml(block.content)
-        if not ft_result.success:
-            return RenderResult(error=f"FastHTML error: {ft_result.error}")
-        
-        # Process content segments
-        html_content = ''.join(
-            part if is_script else (render_markdown(part) if part.strip() else part)
-            for part, is_script in extract_scripts(ft_result.content)
-        )
-        
-        return RenderResult(content=apply_html_attributes(html_content, block.params, logger) 
-                           if block.params else html_content)
+        if is_fasthtml_content(block.content):
+            return RenderResult(content=process_fasthtml_in_content(block.content))
+            
+        # Render markdown content
+        return RenderResult(content=render_markdown(block.content))
     except Exception as e:
-        log(logger, "Renderer", "error", "block", f"Failed to render block '{block.name}': {e}")
-        return RenderResult(error=f"Failed to render block: {e}")
+        log(logger, "Renderer", "error", "block", f"Failed to render block {block.name}: {e}")
+        return RenderResult(content=format_error_html("block", str(e)))
 
 def render_blocks(blocks: Dict[str, List[ContentBlock]]) -> Dict[str, List[str]]:
     """Render multiple content blocks to HTML."""
@@ -205,7 +201,7 @@ def get_layout_name(item: ContentItem) -> str:
     default = getattr(pyxie_attr, "default_layout", "default") if pyxie_attr else "default"
     return item.metadata.get("layout", default)
 
-def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = None) -> Tuple[Optional[str], Optional[Any], Optional[str]]:
+def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """Handle caching and layout resolution in one step."""
     collection = item.collection or "content"
     layout_name = get_layout_name(item)
@@ -224,30 +220,35 @@ def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = 
     return None, None, error_msg
 
 def render_content(item: ContentItem, cache: Optional[CacheProtocol] = None) -> str:
-    """Render a content item to HTML using its layout and blocks."""
+    """Render a content item to HTML."""
     try:
         # Get from cache or resolve layout
-        cached_html, layout_instance, layout_error = handle_cache_and_layout(item, cache)
-        if cached_html: return cached_html
-        if layout_error: return format_error_html("rendering", layout_error)
+        cached_html, layout_html, layout_error = handle_cache_and_layout(item, cache)
+        if cached_html:
+            return cached_html
+        if layout_error:
+            return format_error_html("rendering", layout_error)
         
-        # Render blocks and process conditional visibility
-        rendered_blocks = render_blocks(item.blocks)
-        filled_slots = extract_slots_with_content(rendered_blocks)
-        layout_html = process_conditional_visibility(layout_instance, filled_slots)
+        # Render blocks
+        rendered_blocks = {}
+        for name, blocks in item.blocks.items():
+            rendered = [render_block(block, cache) for block in blocks]
+            rendered_blocks[name] = [r.content if r.success else format_error_html("block", r.error) for r in rendered]
         
-        # Fill slots
+        # Fill slots in layout
+        from .slots import fill_slots
         result = fill_slots(layout_html, rendered_blocks)
-        if not result.was_filled:
-            error_msg = f"Failed to fill slots: {result.error}"
-            log(logger, "Renderer", "error", "render", f"Failed to render {item.slug}: {error_msg}")
-            return format_error_html("rendering", error_msg)
+        if result.error:
+            return format_error_html("rendering", result.error)
+            
+        # Process conditional visibility
+        html = process_conditional_visibility(result.element, extract_slots_with_content(rendered_blocks))
         
-        # Save to cache if enabled
-        html = result.element
+        # Cache the result
         if cache:
             cache.store(item.collection or "content", item.source_path, html, get_layout_name(item))
+            
         return html
     except Exception as e:
-        log(logger, "Renderer", "error", "render", f"Failed to render content to HTML: {e}")
+        log(logger, "Renderer", "error", "render", f"Failed to render {item.slug}: {e}")
         return format_error_html("rendering", str(e)) 

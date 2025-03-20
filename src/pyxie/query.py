@@ -22,7 +22,7 @@ This module provides a flexible query interface for content items, supporting:
 """
 
 import logging
-from typing import Any, List, Optional, Sequence, TypeVar, Generic, Callable, Dict, Union, Tuple, Protocol, Collection
+from typing import Any, List, Optional, Sequence, TypeVar, Generic, Callable, Tuple
 from datetime import datetime
 from dataclasses import dataclass
 import math
@@ -174,7 +174,10 @@ class Paginator:
                 return items[-limit:] if limit < len(items) else items
             return items[:limit]
         
-        get_value = lambda item: getattr(item, field, None) or item.metadata.get(field)
+        def get_value(item: Any) -> Any:
+            """Get value from item for cursor comparison."""
+            return getattr(item, field, None) or item.metadata.get(field)
+            
         is_forward = direction == "forward"
         
         if is_forward:

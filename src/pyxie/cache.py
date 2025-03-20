@@ -18,7 +18,7 @@ import sqlite3
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional
 from contextlib import contextmanager
 
 from .errors import PyxieError

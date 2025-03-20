@@ -647,7 +647,7 @@ This is an example block
     assert "note" in note_block.content 
 
 def test_html_tags_in_real_content(caplog):
-    """Test that HTML tags in real content files don't trigger unclosed tag warnings."""
+    """Test that HTML tags in code examples are preserved and don't trigger warnings."""
     # Path to the markdown-features.md file
     file_path = Path("examples/minimal_app/content/posts/markdown-features.md")
     
@@ -663,9 +663,6 @@ def test_html_tags_in_real_content(caplog):
     # Parse the content
     parsed = parse(content, file_path)
     
-    # Print the blocks keys to help with debugging
-    print(f"Found blocks: {list(parsed.blocks.keys())}")
-    
     # Verify that HTML tags aren't flagged as unclosed
     html_tags_warned = []
     for record in caplog.records:
@@ -677,13 +674,16 @@ def test_html_tags_in_real_content(caplog):
     # Assert that no HTML tags were warned about
     assert not html_tags_warned, f"HTML tags incorrectly flagged as unclosed: {html_tags_warned}"
     
-    # Check for specific HTML-related blocks that should be parsed
-    html_tags_parsed = [block_name for block_name in parsed.blocks.keys() 
-                       if block_name.lower() in HTML_TAGS]
+    # Verify that content blocks are properly parsed
+    expected_blocks = {'featured_image', 'toc', 'content', 'fasthtml', 'conclusion'}
+    assert set(parsed.blocks.keys()) == expected_blocks, f"Expected blocks {expected_blocks}, got {set(parsed.blocks.keys())}"
     
-    # We expect HTML tags like div, a to be parsed without warnings
-    assert len(html_tags_parsed) > 0, "No HTML tags were parsed"
+    # Verify that HTML tags in code examples are preserved
+    content_blocks = parsed.blocks['content']
+    assert len(content_blocks) > 0, "No content blocks found"
+    content_text = content_blocks[0].content
     
-    # Verify at least some expected HTML blocks
-    assert "div" in parsed.blocks, "Expected <div> to be properly parsed"
-    assert "a" in parsed.blocks, "Expected <a> tags to be properly parsed" 
+    # Check for FastHTML constructors in code examples
+    assert 'Div("content", cls="my-class")' in content_text, "HTML Div constructor not preserved in content"
+    assert 'Button("Click me", onclick="handleClick()")' in content_text, "HTML Button constructor not preserved in content"
+    assert 'P("paragraph text")' in content_text, "HTML P constructor not preserved in content" 

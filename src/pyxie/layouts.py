@@ -37,14 +37,38 @@ Example:
 """
 
 import logging
-from typing import Any, Callable, Dict, Optional, Protocol, TypeVar, cast
+from typing import Any, Callable, Dict, Optional, Protocol, List
+from os import PathLike
 from dataclasses import dataclass, field
-from functools import wraps
+from pathlib import Path
+import importlib
+import inspect
 
 from fastcore.xml import FT, to_xml
 from .utilities import log
 
 logger = logging.getLogger(__name__)
+
+class LayoutError(Exception):
+    """Base class for layout-related errors."""
+
+class LayoutNotFoundError(LayoutError):
+    """Raised when a layout is not found."""
+
+class LayoutValidationError(LayoutError):
+    """Raised when a layout is invalid."""
+
+def log_errors(logger: logging.Logger, component: str, action: str) -> Callable:
+    """Decorator to log errors and re-raise."""
+    def decorator(func: Callable) -> Callable:
+        def wrapper(*args, **kwargs) -> Any:
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                log(logger, component, "error", action, str(e))
+                raise
+        return wrapper
+    return decorator
 
 class LayoutFunction(Protocol):
     """Protocol defining a layout function signature."""
@@ -56,6 +80,7 @@ class Layout:
     name: str
     func: LayoutFunction
     
+    @log_errors(logger, "Layouts", "create")
     def create(self, *args: Any, **kwargs: Any) -> str:
         """Create a layout instance.
         
@@ -67,41 +92,35 @@ class Layout:
             The layout's HTML string
             
         Raises:
-            TypeError: If the layout returns a non-FastHTML value
+            LayoutValidationError: If the layout returns a non-FastHTML value
         """
-        try:
-            # Extract slots if provided
-            slots = kwargs.pop("slots", None)
+        # Extract slots if provided
+        slots = kwargs.pop("slots", None)
+        
+        # Call the layout function
+        result = self.func(*args, **kwargs)
+        
+        # Handle different return types
+        if isinstance(result, tuple) and all(isinstance(item, FT) for item in result):                
+            layout_xml = to_xml(result)
+        elif isinstance(result, (FT, str)):
+            layout_xml = to_xml(result)
+        else:
+            raise LayoutValidationError(
+                f"Layout '{self.name}' must return a FastHTML component "
+                f"or HTML string, got {type(result)}"
+            )
             
-            # Call the layout function
-            result = self.func(*args, **kwargs)
+        # Apply slots if provided
+        if slots:
+            from pyxie.slots import fill_slots
+            # Convert slot values to lists as required by fill_slots
+            slot_blocks = {name: [value] if not isinstance(value, list) else value 
+                          for name, value in slots.items()}
+            result = fill_slots(layout_xml, slot_blocks)
+            return result.element
             
-            # Handle different return types
-            if isinstance(result, tuple) and all(isinstance(item, FT) for item in result):                
-                # Just convert to XML directly
-                layout_xml = to_xml(result)
-            elif isinstance(result, (FT, str)):
-                # Handle regular FT objects or strings
-                layout_xml = to_xml(result)
-            else:
-                raise TypeError(
-                    f"Layout '{self.name}' must return a FastHTML component "
-                    f"or HTML string, got {type(result)}"
-                )
-                
-            # Apply slots if provided
-            if slots:
-                from pyxie.slots import fill_slots
-                # Convert slot values to lists as required by fill_slots
-                slot_blocks = {name: [value] if not isinstance(value, list) else value 
-                              for name, value in slots.items()}
-                result = fill_slots(layout_xml, slot_blocks)
-                return result.element
-                
-            return layout_xml
-        except Exception as e:
-            log(logger, "Layouts", "error", "create", f"Error creating layout '{self.name}': {e}")
-            raise
+        return layout_xml
 
 @dataclass
 class LayoutRegistry:
@@ -109,49 +128,85 @@ class LayoutRegistry:
     _layouts: Dict[str, Layout] = field(default_factory=dict)
     
     def register(self, name: str, func: LayoutFunction) -> None:
-        """Register a layout function.
-        
-        Args:
-            name: Name to register layout under
-            func: Layout function to register
-        """
+        """Register a layout function."""
         if name in self._layouts:
             log(logger, "Layouts", "warning", "register", f"Overwriting existing layout '{name}'")
         self._layouts[name] = Layout(name=name, func=func)
         log(logger, "Layouts", "debug", "register", f"Registered layout '{name}'")
     
-    def get(self, name: str) -> Optional[Layout]:
-        """Get a layout by name.
-        
-        Args:
-            name: Name of layout to get
-            
-        Returns:
-            Layout if found, None otherwise
-        """
+    def get(self, name: str) -> Layout:
+        """Get a layout by name or raise LayoutNotFoundError."""
         if name not in self._layouts:
-            log(logger, "Layouts", "warning", "get", f"Layout '{name}' not found")
-            return None
+            raise LayoutNotFoundError(f"Layout '{name}' not found")
         return self._layouts[name]
     
     def create(self, name: str, *args: Any, **kwargs: Any) -> Optional[str]:
-        """Create a layout instance by name.
-        
-        Args:
-            name: Name of the layout to create
-            *args: Positional arguments for the layout
-            **kwargs: Keyword arguments for the layout
-            
-        Returns:
-            The layout's HTML string or None if layout not found
-        """
-        if layout := self.get(name):
-            return layout.create(*args, **kwargs)
-        return None
+        """Create a layout instance by name."""
+        try:
+            return self.get(name).create(*args, **kwargs)
+        except LayoutNotFoundError:
+            return None
     
     def __contains__(self, name: str) -> bool:
         """Check if a layout exists."""
         return name in self._layouts
+
+    def resolve_layout_paths(self, content_dir: Optional[Path], layout_paths: Optional[List[PathLike]]) -> List[Path]:
+        """Resolve layout search paths."""
+        if layout_paths:
+            return [Path(p) for p in layout_paths]
+            
+        if not content_dir or not content_dir.parent:
+            return []
+            
+        app_dir = content_dir.parent
+        paths = [app_dir]
+        
+        for dirname in ["layouts", "templates", "static"]:
+            path = app_dir / dirname
+            if path.exists() and path.is_dir():
+                paths.append(path)
+                
+        return paths
+
+    def _is_valid_python_file(self, path: Path) -> bool:
+        """Check if a Python file should be processed for layouts."""
+        return (path.suffix == '.py' and 
+                '__pycache__' not in path.parts and
+                not any(part.startswith('.') for part in path.parts))
+
+    @log_errors(logger, "Layouts", "discover")
+    def _process_layout_files(self, python_files: List[Path]) -> None:
+        """Process Python files to find and register layouts."""
+        for file in python_files:
+            if not (spec := importlib.util.spec_from_file_location(file.stem, file)):
+                continue
+                
+            try:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                
+                for _, obj in inspect.getmembers(
+                    module, 
+                    lambda o: inspect.isfunction(o) and hasattr(o, '_layout_name')
+                ):
+                    log(logger, "Layouts", "debug", "discover", 
+                        f"Found layout: {obj._layout_name} in {file.name}")
+            except Exception as e:
+                log(logger, "Layouts", "error", "discover", 
+                    f"Error loading layout file {file}: {e}")
+
+    def discover_layouts(self, content_dir: Optional[Path] = None, layout_paths: Optional[List[PathLike]] = None) -> None:
+        """Discover and register layouts from Python modules."""
+        paths = self.resolve_layout_paths(content_dir, layout_paths)
+        
+        for path in paths:
+            if not path.exists() or not path.is_dir():
+                log(logger, "Layouts", "warning", "discover", f"Layout directory not found: {path}")
+                continue
+                
+            python_files = [f for f in path.glob("**/*.py") if self._is_valid_python_file(f)]
+            self._process_layout_files(python_files)
 
 # Global registry instance
 registry = LayoutRegistry()

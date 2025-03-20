@@ -74,7 +74,8 @@ class ParsedContent(ContentProvider):
 
     def get_block(self, name: str, index: Optional[int] = None) -> Optional[ContentBlock]:
         """Get content block by name and optional index."""
-        if name not in self.blocks: return None
+        if name not in self.blocks:
+            return None
         blocks = self.blocks[name]
         return blocks[index or 0] if blocks and (index is None or 0 <= index < len(blocks)) else None
     
@@ -121,14 +122,17 @@ def log_tag_warning(tag: str, line_num: int, parent_name: Optional[str] = None,
         if parent_name and parent_line else f"Unclosed block <{tag}> at line {line_num}"
     log(logger, "Parser", "warning", "blocks", message, file_path)
 
-def find_closing_tag(content: str, tag: str, start_pos: int, code_blocks: List[Tuple[int, int]]) -> int:
-    """Find the matching closing tag that's not in a code block."""
-    closing_tag = f"</{tag}>"
+def find_closing_tag(content: str, tag_name: str, start_pos: int = 0, code_blocks: Optional[List[Tuple[int, int]]] = None) -> int:
+    """Find closing tag position, skipping tags in code blocks."""
+    closing_tag = f"</{tag_name}>"
     pos = start_pos
+    
     while pos < len(content):
         pos = content.find(closing_tag, pos)
-        if pos == -1: return -1
-        if not is_in_code_block(content, pos, code_blocks): return pos
+        if pos == -1:
+            return -1
+        if not is_in_code_block(content, pos, code_blocks):
+            return pos
         pos += 1
     return -1
 
@@ -167,7 +171,8 @@ def find_content_blocks(content: str, start_pos: int = 0, parent_info: Optional[
     # Find potential tags
     while pos < len(content):
         opening_match = re.search(r'<(\w+)(?:\s+[^>]*)?>', content[pos:], re.DOTALL)
-        if not opening_match: break
+        if not opening_match:
+            break
             
         tag_name = opening_match.group(1)
         tag_start = pos + opening_match.start()
@@ -220,7 +225,7 @@ def iter_blocks(content: str, file_path: Optional[Path] = None) -> Iterator[Cont
 
 def find_tag_line_number(content: str, tag_name: str, start_pos: int = 0) -> int:
     """Find line number for a tag in content. Used for backward compatibility."""
-    tag_pattern = re.compile(f"<{tag_name}(?:\\s+[^>]*)?>");
+    tag_pattern = re.compile(f"<{tag_name}(?:\\s+[^>]*)?>")
     match = tag_pattern.search(content, start_pos)
     return get_line_number(content, match.start()) if match else 0
 
@@ -229,23 +234,29 @@ def extract_error_line(e: Exception, content: str, offset: int = 0) -> int:
     match = LINE_NUMBER_PATTERN.search(str(e))
     return offset + int(match.group(1)) - 1 if match else 0
 
-def extract_valid_metadata(frontmatter_text: str) -> Dict[str, Any]:
-    """Extract valid key-value pairs from frontmatter text."""
+def extract_frontmatter_values(frontmatter_text: str) -> Dict[str, Any]:
+    """Extract values from frontmatter text."""
     result = {}
+    
     for line in frontmatter_text.splitlines():
         line = line.strip()
-        if not line or line.startswith('#') or ':' not in line or line.count(':') > 1: continue
+        if not line or line.startswith('#') or ':' not in line or line.count(':') > 1:
+            continue
         parts = line.split(':', 1)
         key = parts[0].strip()
-        if not key or ':' in key: continue
+        if not key or ':' in key:
+            continue
         result[key] = convert_value(parts[1].strip())
     return result
 
 def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
     """Parse YAML frontmatter from content."""
-    if not content.strip().startswith('---'): return {}, content
-    if empty_match := EMPTY_FRONTMATTER_PATTERN.match(content): return {}, empty_match.group('content')
-    if not (match := FRONTMATTER_PATTERN.match(content)): return {}, content
+    if not content.strip().startswith('---'):
+        return {}, content
+    if empty_match := EMPTY_FRONTMATTER_PATTERN.match(content):
+        return {}, empty_match.group('content')
+    if not (match := FRONTMATTER_PATTERN.match(content)):
+        return {}, content
         
     frontmatter_text, remaining_content = match.group('frontmatter'), match.group('content')
     line_offset = get_line_number(content, match.start(1))
@@ -263,7 +274,7 @@ def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
         malformed_line_num = extract_error_line(e, content, line_offset)
         log(logger, "Parser", "warning", "frontmatter", 
             f"Malformed YAML in frontmatter at line {malformed_line_num}: {e}. Attempting to extract valid keys.")
-        return extract_valid_metadata(frontmatter_text), remaining_content
+        return extract_frontmatter_values(frontmatter_text), remaining_content
 
 def parse(content: str, file_path: Optional[Path] = None) -> ParsedContent:
     """Parse markdown content with frontmatter and blocks."""

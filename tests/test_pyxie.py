@@ -13,7 +13,7 @@ from pyxie.layouts import layout, registry
 
 # Test utilities
 @dataclass
-class TestContent:
+class ContentFixture:
     """Helper for creating test content."""
     content: str
     layout: str = "test"
@@ -79,7 +79,7 @@ def test_content_loading(pyxie: Pyxie) -> None:
     test_dir.mkdir()
     
     # Add test content
-    test_content = TestContent(
+    test_content = ContentFixture(
         content="# Test Content",
         metadata={"title": "Test Page"}
     )
@@ -135,7 +135,7 @@ def test_query_items(pyxie: Pyxie, has_cache: bool, test_paths: Dict[str, Path])
     
     # Add test content with different tags
     for i in range(5):
-        content = TestContent(
+        content = ContentFixture(
             content=f"# Test Content {i}",
             metadata={
                 "title": f"Test Page {i}",
@@ -254,14 +254,14 @@ def test_custom_slug_support(pyxie: Pyxie) -> None:
     test_dir.mkdir()
     
     # Add file with default slug (from filename)
-    default_content = TestContent(
+    default_content = ContentFixture(
         content="# Default Slug Test",
         metadata={"title": "Default Slug Post"}
     )
     default_content.write_to(test_dir / "default-slug.md")
     
     # Add file with custom slug in frontmatter
-    custom_content = TestContent(
+    custom_content = ContentFixture(
         content="# Custom Slug Test",
         metadata={"title": "Custom Slug Post", "slug": "custom-url-path"}
     )

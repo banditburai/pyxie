@@ -17,13 +17,13 @@
 import logging
 import traceback
 import re
-from typing import Optional, Any, List, Tuple, Set, Union, Dict
+from typing import Optional, Any, List, Tuple, Union, Dict
 from dataclasses import dataclass
 from fastcore.xml import to_xml
 import fasthtml.common as ft_common
 from .errors import (
-    FastHTMLError, FastHTMLImportError, FastHTMLExecutionError,
-    FastHTMLRenderError, FastHTMLConversionError
+    FastHTMLError, FastHTMLExecutionError,
+    FastHTMLConversionError
 )
 from .utilities import log, extract_content, safe_import
 
@@ -131,12 +131,20 @@ def is_content_type(content: str, check_type: str = "fasthtml") -> bool:
     
     return False
 
-is_fasthtml_content = lambda content: is_content_type(content, "fasthtml")
-is_fasthtml_block = lambda name: is_content_type(name, "fasthtml_block")
-is_direct_html_content = lambda content: is_content_type(content, "direct_html")
+def is_fasthtml_content(content: str) -> bool:
+    """Check if content is FastHTML."""
+    return is_content_type(content, "fasthtml")
+
+def is_fasthtml_block(name: str) -> bool:
+    """Check if block name indicates FastHTML."""
+    return is_content_type(name, "fasthtml_block")
+
+def is_direct_html_content(content: str) -> bool:
+    """Check if content is direct HTML."""
+    return is_content_type(content, "direct_html")
 
 def create_namespace(context_path=None) -> dict:
-    """Create namespace with FastHTML components."""
+    """Create a namespace for FastHTML execution."""
     namespace = {name: getattr(ft_common, name) 
                 for name in dir(ft_common) if not name.startswith('_')}
     
@@ -222,7 +230,8 @@ class FastHTMLRenderer:
     @classmethod
     def to_xml(cls, results: List[Any]) -> str:
         """Convert FastHTML results to XML."""
-        if not results: return ""
+        if not results:
+            return ""
         return "\n".join(cls._render_component(r) for r in results)
     
     @classmethod

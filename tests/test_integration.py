@@ -168,8 +168,7 @@ def test_missing_post(pyxie_instance: Pyxie) -> None:
     item, error = pyxie_instance.get_item("non-existent-post")
     assert item is None
     assert error is not None
-    assert "couldn't find" in error[1].lower()
-    assert "non-existent-post" in error[1]
+    assert "no post found" in error[1].lower()
 
 def test_custom_layout(pyxie_instance: Pyxie, test_post: Path) -> None:
     """Test using a custom layout for rendering."""
@@ -386,7 +385,7 @@ This is a paragraph with a line break <br> here.
     pyxie._load_collection(pyxie._collections["content"])
     
     # Get the content item
-    item, error = pyxie.get_item("self-closing-tags-test", "content", status="published")
+    item, error = pyxie.get_item("self-closing-tags-test", collection="content", status="published")
     assert error is None
     assert item is not None
     

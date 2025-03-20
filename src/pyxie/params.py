@@ -16,7 +16,7 @@
 
 import re
 import logging
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, Optional, Any
 from .utilities import log
 
 logger = logging.getLogger(__name__)

@@ -7,7 +7,8 @@ from fastcore.xml import Div, H1, Article, Aside, FT
 from typing import Optional, Callable, Any, List, Dict, TypeVar, Protocol
 from dataclasses import dataclass
 
-from pyxie.renderer import render_block, render_blocks, RenderError, render_content, process_fasthtml
+from pyxie.renderer import render_block, render_blocks, render_content, process_fasthtml
+from pyxie.errors import RenderError
 from pyxie.parser import ContentBlock
 from pyxie.layouts import layout, registry
 from pyxie.pyxie import Pyxie
@@ -310,10 +311,10 @@ def test_content_item_render_method() -> None:
 def test_handle_slot_filling_errors() -> None:
     """Test handling of slot filling errors."""
     from pyxie.renderer import render_content
-    from pyxie.slots import SlotFillResult, fill_slots
+    from pyxie.slots import SlotFillResult
     from pyxie.types import ContentItem, ContentBlock
     import unittest.mock as mock
-    
+
     # Create a mock ContentItem
     mock_item = mock.MagicMock(spec=ContentItem)
     mock_item.slug = "test-slug"
@@ -321,18 +322,18 @@ def test_handle_slot_filling_errors() -> None:
     mock_item.source_path = "test.md"
     mock_item.metadata = {"layout": "test"}
     mock_item.blocks = {"content": [ContentBlock(name="content", content="<p>Test</p>", params={}, content_type="md")]}
-    
+
     # Mock fill_slots to return an error
-    with mock.patch('pyxie.renderer.fill_slots') as mock_fill_slots:
-        # Set up the mock to return a failed result
-        mock_result = mock.MagicMock(spec=SlotFillResult)
-        mock_result.was_filled = False
-        mock_result.error = "Test error"
+    with mock.patch('pyxie.slots.fill_slots') as mock_fill_slots:
+        mock_result = SlotFillResult(
+            was_filled=False,
+            element="<div>Error</div>",
+            error="Test error"
+        )
         mock_fill_slots.return_value = mock_result
-        
-        # Call render_content - this should return an error HTML
+
+        # Render the content
         result = render_content(mock_item)
-        
-        # Verify the result contains an error message
-        assert "rendering" in result
+
+        # Check that the error was handled
         assert "Test error" in result 

@@ -15,16 +15,14 @@
 """Shared type definitions for Pyxie."""
 
 import logging
-from enum import Enum, auto
-from typing import Dict, Any, TypedDict, Protocol, Union, NotRequired, Optional, List, Literal
+from typing import Dict, Any, TypedDict, Protocol, Union, Optional, List
 from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from .utilities import log
 from .constants import (
-    ContentType, VALID_CONTENT_TYPES, RequiredMetadata,
-    DEFAULT_METADATA, COMMON_DATE_FORMATS
+    ContentType, VALID_CONTENT_TYPES, DEFAULT_METADATA
 )
 
 logger = logging.getLogger(__name__)
@@ -89,28 +87,28 @@ class ContentItem:
     _pyxie: Any = field(default=None, repr=False)
 
     def __post_init__(self):
-        """Add metadata keys as attributes for easy access."""
-        if "title" not in self.metadata:
+        """Initialize metadata and content."""
+        if not self.metadata:
+            self.metadata = {}
+            
+        # Set title from slug if not present
+        if "title" not in self.metadata and self.slug:
             self.metadata["title"] = self.slug.replace("-", " ").title()
             
-        if "status" not in self.metadata:
-            self.metadata["status"] = "draft"
-    
-    def __getattr__(self, name: str) -> Any:
-        """Allow accessing metadata as attributes."""
-        if name in self.metadata:
-            return self.metadata[name]
-        raise AttributeError(f"'ContentItem' has no attribute '{name}'")
+        # Add metadata keys as attributes for easy access, skipping properties
+        for key, value in self.metadata.items():
+            if not hasattr(self.__class__, key) or not isinstance(getattr(self.__class__, key), property):
+                setattr(self, key, value)
+            
+    @property
+    def status(self) -> Optional[str]:
+        """Get content status."""
+        return self.metadata.get("status")
     
     @property
     def title(self) -> str:
         """Get item title."""
         return self.metadata["title"]
-    
-    @property
-    def status(self) -> str:
-        """Get content status."""
-        return self.metadata["status"]
     
     @property
     def tags(self) -> List[str]:

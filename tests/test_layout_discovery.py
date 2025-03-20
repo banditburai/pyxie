@@ -31,9 +31,9 @@ def test_paths(tmp_path: Path) -> Dict[str, Path]:
     return paths
 
 
-@pytest.fixture
-def clean_registry():
-    """Clear the layout registry before and after tests."""
+@pytest.fixture(autouse=True)
+def clear_registry():
+    """Clear the layout registry before each test and restore it after."""
     # Save existing layouts
     saved_layouts = registry._layouts.copy()
     
@@ -64,7 +64,7 @@ def {name}_layout(title="Default Title") -> FT:
     path.write_text(content)
 
 
-def test_autodiscover_root(test_paths, clean_registry):
+def test_autodiscover_root(test_paths):
     """Test auto-discovery of layouts in the root directory."""
     # Create a layout in the root directory
     create_layout_file(test_paths['app_root'] / "main.py", "main", "root_layout")
@@ -80,7 +80,7 @@ def test_autodiscover_root(test_paths, clean_registry):
     assert registry._layouts["root_layout"].name == "root_layout"
 
 
-def test_autodiscover_layouts_dir(test_paths, clean_registry):
+def test_autodiscover_layouts_dir(test_paths):
     """Test auto-discovery of layouts in the layouts directory."""
     # Create layouts in the layouts directory
     create_layout_file(test_paths['layouts'] / "blog.py", "blog", "blog_layout")
@@ -97,7 +97,7 @@ def test_autodiscover_layouts_dir(test_paths, clean_registry):
     assert "page_layout" in registry._layouts
 
 
-def test_autodiscover_subdirectories(test_paths, clean_registry):
+def test_autodiscover_subdirectories(test_paths):
     """Test auto-discovery of layouts in subdirectories."""
     # Create a layout in a subdirectory
     test_paths['static_subdir'].mkdir(exist_ok=True)
@@ -113,7 +113,7 @@ def test_autodiscover_subdirectories(test_paths, clean_registry):
     assert "component_layout" in registry._layouts
 
 
-def test_autodiscover_custom_paths(test_paths, clean_registry):
+def test_autodiscover_custom_paths(test_paths):
     """Test auto-discovery with custom layout paths."""
     # Create a custom directory
     custom_dir = test_paths['app_root'] / "custom_layouts"
@@ -133,7 +133,7 @@ def test_autodiscover_custom_paths(test_paths, clean_registry):
     assert "custom_layout" in registry._layouts
 
 
-def test_autodiscover_disabled(test_paths, clean_registry):
+def test_autodiscover_disabled(test_paths):
     """Test disabling auto-discovery."""
     # Create layouts in various places
     create_layout_file(test_paths['app_root'] / "main.py", "main", "root_layout")
@@ -151,7 +151,7 @@ def test_autodiscover_disabled(test_paths, clean_registry):
     assert "page_layout" not in registry._layouts
 
 
-def test_autodiscover_error_handling(test_paths, clean_registry):
+def test_autodiscover_error_handling(test_paths):
     """Test error handling during auto-discovery."""
     # Create an invalid layout file
     invalid_file = test_paths['layouts'] / "invalid.py"
@@ -170,7 +170,7 @@ def test_autodiscover_error_handling(test_paths, clean_registry):
     assert "valid_layout" in registry._layouts
 
 
-def test_autodiscover_nonexistent_directory(test_paths, clean_registry):
+def test_autodiscover_nonexistent_directory(test_paths):
     """Test auto-discovery with nonexistent directory."""
     # Create a valid layout file
     create_layout_file(test_paths['layouts'] / "valid.py", "valid", "valid_layout")
@@ -187,7 +187,7 @@ def test_autodiscover_nonexistent_directory(test_paths, clean_registry):
     assert "valid_layout" in registry._layouts
 
 
-def test_multiple_layouts_in_file(test_paths, clean_registry):
+def test_multiple_layouts_in_file(test_paths):
     """Test discovering multiple layouts in a single file."""
     # Create a file with multiple layouts
     multiple_file = test_paths['layouts'] / "multiple.py"
@@ -213,4 +213,105 @@ def layout_two(title="Layout Two") -> FT:
     
     # Check that both layouts were discovered
     assert "layout1" in registry._layouts
-    assert "layout2" in registry._layouts 
+    assert "layout2" in registry._layouts
+
+
+def test_autodiscover_excludes_cache_files(tmp_path):
+    """Test that __pycache__ directories and .pyc files are excluded."""
+    # Create a layout directory with cache files
+    layout_dir = tmp_path / "layouts"
+    layout_dir.mkdir()
+
+    # Create a valid layout file
+    valid_layout = layout_dir / "valid.py"
+    valid_layout.write_text("""
+from pyxie.layouts import layout
+from fastcore.xml import Div
+
+@layout("valid")
+def valid_layout():
+    return Div("Valid layout")
+""")
+
+    # Create __pycache__ directory with .pyc file
+    pycache_dir = layout_dir / "__pycache__"
+    pycache_dir.mkdir()
+    pyc_file = pycache_dir / "valid.cpython-311.pyc"
+    pyc_file.write_text("""
+from pyxie.layouts import layout
+from fastcore.xml import Div
+
+@layout("invalid_cache")
+def invalid_layout():
+    return Div("Invalid layout")
+""")
+
+    # Create a .pyc file directly in layouts
+    direct_pyc = layout_dir / "direct.pyc"
+    direct_pyc.write_text("""
+from pyxie.layouts import layout
+from fastcore.xml import Div
+
+@layout("invalid_direct")
+def invalid_layout():
+    return Div("Invalid layout")
+""")
+
+    # Initialize Pyxie with auto-discovery
+    pyxie = Pyxie(tmp_path, auto_discover_layouts=True, layout_paths=[layout_dir])
+
+    # Verify only the valid layout was registered
+    assert "valid" in registry._layouts
+    assert "invalid_cache" not in registry._layouts
+    assert "invalid_direct" not in registry._layouts
+    assert len(registry._layouts) == 1
+
+
+def test_autodiscover_excludes_hidden_files(tmp_path):
+    """Test that hidden files and directories are excluded."""
+    # Create a layout directory
+    layout_dir = tmp_path / "layouts"
+    layout_dir.mkdir()
+
+    # Create a valid layout file
+    valid_layout = layout_dir / "valid.py"
+    valid_layout.write_text("""
+from pyxie.layouts import layout
+from fastcore.xml import Div
+
+@layout("valid")
+def valid_layout():
+    return Div("Valid layout")
+""")
+
+    # Create hidden files and directories
+    hidden_file = layout_dir / ".hidden.py"
+    hidden_file.write_text("""
+from pyxie.layouts import layout
+from fastcore.xml import Div
+
+@layout("invalid_hidden")
+def invalid_layout():
+    return Div("Invalid layout")
+""")
+
+    hidden_dir = layout_dir / ".hidden"
+    hidden_dir.mkdir()
+    hidden_layout = hidden_dir / "layout.py"
+    hidden_layout.write_text("""
+from pyxie.layouts import layout
+from fastcore.xml import Div
+
+@layout("invalid_hidden_dir")
+def invalid_layout():
+    return Div("Invalid layout")
+""")
+
+    # Initialize Pyxie with auto-discovery
+    pyxie = Pyxie(tmp_path, auto_discover_layouts=True, layout_paths=[layout_dir])
+
+    # Verify only the valid layout was registered
+    assert "valid" in registry._layouts
+    assert "invalid_hidden" not in registry._layouts
+    assert "invalid_hidden_dir" not in registry._layouts
+    assert len(registry._layouts) == 1 

@@ -16,20 +16,18 @@
 
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Any, Tuple, List, Union, Callable, TypeVar, cast
+from typing import Dict, Optional, Any, Tuple, List, TypeVar, cast
 from collections import Counter
-import math
-from functools import partial
 import importlib.util
 import inspect
-import sys
 
 from .constants import DEFAULT_METADATA
 from .types import ContentItem, PathLike
 from .query import Query, QueryResult
 from .cache import Cache
-from .utilities import log, load_content_file, normalize_tags, resolve_default_layout
+from .utilities import log, load_content_file, resolve_default_layout
 from .collection import Collection
+from .layouts import registry
 
 logger = logging.getLogger(__name__)
 
@@ -75,11 +73,12 @@ class Pyxie:
         self.cache = Cache(cache_dir) if cache_dir else None
         self._collections: Dict[str, Collection] = {}
         self._items: Dict[str, ContentItem] = {}
+        self.watcher = None
         
         if self.content_dir:
             self.add_collection("content", self.content_dir)                    
         if auto_discover_layouts:
-            self.discover_layouts(layout_paths)
+            registry.discover_layouts(self.content_dir, layout_paths)
     
     def discover_layouts(self, layout_paths: Optional[List[PathLike]] = None) -> None:
         """Discover and register layouts from Python modules in the project.
@@ -282,26 +281,27 @@ class Pyxie:
     def get_item(
         self,
         slug: str,
-        collection: Optional[str] = None,
-        *,
-        status: Optional[str] = "published"
+        **kwargs
     ) -> Tuple[Optional[ContentItem], Optional[Tuple[str, str]]]:
-        """Get single content item by slug."""
-        if collection:
-            if collection not in self._collections:
-                return None, ("Collection Not Found", f"Collection '{collection}' does not exist")
+        """Get a single content item by slug.
+        
+        Args:
+            slug: The slug to get content for
+            **kwargs: Additional arguments passed to get_items
             
-            item = self._collections[collection]._items.get(slug)
-        else:
-            item = self._items.get(slug)
+        Returns:
+            A tuple of (item, error) where error is None if successful
+        """
+        # Check if we have a watcher enabled
+        if self.watcher:
+            self.watcher.check()
             
-        if not item:
-            return None, ("Post Not Found", f"Sorry, we couldn't find a post matching '{slug}'")
+        # Get all items matching the slug
+        items = self.get_items(slug=slug, **kwargs).items
+        if not items:
+            return None, ("Post Not Found", f"No post found with slug '{slug}'")
             
-        if status and item.metadata.get("status") != status:
-            return None, ("Post Not Available", f"This post does not have status '{status}'")
-                
-        return item, None
+        return items[0], None
     
     def get_tags(self, collection: Optional[str] = None) -> Dict[str, int]:
         """Get tag usage counts."""
