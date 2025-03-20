@@ -48,7 +48,8 @@ class Pyxie:
         cache_dir: Optional[PathLike] = None,
         default_layout: str = "default",
         auto_discover_layouts: bool = True,
-        layout_paths: Optional[List[PathLike]] = None
+        layout_paths: Optional[List[PathLike]] = None,
+        watch_content: bool = False
     ):
         """Initialize Pyxie content manager."""
         self.content_dir = Path(content_dir) if content_dir else None
@@ -71,6 +72,9 @@ class Pyxie:
             self.add_collection("content", self.content_dir)                    
         if auto_discover_layouts:
             registry.discover_layouts(self.content_dir, layout_paths)
+            
+        if watch_content:
+            self.start_watching()
     
     @property
     def collections(self) -> List[str]:
@@ -328,4 +332,32 @@ class Pyxie:
             
         # Invalidate cache if it exists
         if self.cache:
-            self.cache.invalidate()        
+            self.cache.invalidate()
+
+    def start_watching(self) -> None:
+        """Start watching content directories for changes."""
+        if not self.content_dir:
+            return
+            
+        try:
+            from watchfiles import awatch
+            import asyncio
+            
+            async def watch_content():
+                async for changes in awatch(self.content_dir):
+                    logger.info(f"Content changes detected: {changes}")
+                    self.rebuild_content()
+                    
+            self.watcher = asyncio.create_task(watch_content())
+            logger.info("Content watching started")
+        except ImportError:
+            logger.warning("watchfiles not installed. Content watching disabled.")
+        except Exception as e:
+            logger.error(f"Failed to start content watching: {e}")
+            
+    def stop_watching(self) -> None:
+        """Stop watching content directories for changes."""
+        if self.watcher:
+            self.watcher.cancel()
+            self.watcher = None
+            logger.info("Content watching stopped")        
