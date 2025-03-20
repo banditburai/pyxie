@@ -6,17 +6,15 @@ error handling, and more complex component structures.
 """
 
 import pytest
-import os
-from typing import Dict, Any, List, Generator
+from typing import Dict, Any, Generator
 import tempfile
 from pathlib import Path
 
 from pyxie.fasthtml import (
     render_fasthtml_block, parse_fasthtml_tag, create_namespace,
     safe_import, process_imports, py_to_js, js_function,
-    is_fasthtml_content, protect_script_tags, FastHTMLError
+    is_fasthtml_content, protect_script_tags
 )
-import fasthtml.common as ft_common
 
 # Test fixtures
 @pytest.fixture

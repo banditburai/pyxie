@@ -1,6 +1,5 @@
 import os
 import tempfile
-import pytest
 from pathlib import Path
 from datetime import datetime
 from unittest.mock import MagicMock, patch

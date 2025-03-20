@@ -153,19 +153,22 @@ class LayoutRegistry:
 
     def resolve_layout_paths(self, content_dir: Optional[Path], layout_paths: Optional[List[PathLike]]) -> List[Path]:
         """Resolve layout search paths."""
-        if layout_paths:
-            return [Path(p) for p in layout_paths]
-            
-        if not content_dir or not content_dir.parent:
-            return []
-            
-        app_dir = content_dir.parent
-        paths = [app_dir]
+        paths = []
         
-        for dirname in ["layouts", "templates", "static"]:
-            path = app_dir / dirname
-            if path.exists() and path.is_dir():
-                paths.append(path)
+        # Add custom paths if provided
+        if layout_paths:
+            paths.extend(Path(p) for p in layout_paths)
+            
+        # If no custom paths exist, or if they don't exist, fall back to default paths
+        if not paths or not any(p.exists() and p.is_dir() for p in paths):
+            if content_dir and content_dir.parent:
+                app_dir = content_dir.parent
+                paths.append(app_dir)
+                
+                for dirname in ["layouts", "templates", "static"]:
+                    path = app_dir / dirname
+                    if path.exists() and path.is_dir():
+                        paths.append(path)
                 
         return paths
 

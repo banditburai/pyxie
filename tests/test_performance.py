@@ -6,53 +6,33 @@ renderer, and slot filling operations with different sizes of input.
 
 import pytest
 import time
-from pathlib import Path
 import tempfile
-from typing import Dict, Any, List
-import statistics
-
 from pyxie.parser import parse
-from pyxie.renderer import render_content
 from pyxie.slots import fill_slots
-from pyxie.fasthtml import render_fasthtml_block
-from fastcore.xml import Div, P, Span, FT, to_xml
+from fastcore.xml import Div, P, FT
 
 def time_execution(func, *args, **kwargs):
-    """Execute a function multiple times and measure its performance.
+    """Time the execution of a function."""
+    start_time = time.time()
+    result = func(*args, **kwargs)
+    end_time = time.time()
+    return result, end_time - start_time
+
+def create_nested_structure(depth: int):
+    """Create a nested element structure for testing."""
+    if depth <= 0:
+        return P("Content at leaf level", data_slot="slot-leaf")
     
-    Args:
-        func: Function to time
-        *args: Arguments to pass to function
-        **kwargs: Keyword arguments to pass to function
-        
-    Returns:
-        Dictionary with timing statistics
-    """
-    # Number of runs
-    num_runs = 5
+    children = []
+    for i in range(3):  # Create 3 children at each level
+        child = create_nested_structure(depth - 1)
+        children.append(child)
     
-    # Store timing results
-    times = []
-    
-    # Warm up
-    func(*args, **kwargs)
-    
-    # Timed runs
-    for _ in range(num_runs):
-        start = time.time()
-        result = func(*args, **kwargs)
-        end = time.time()
-        times.append(end - start)
-    
-    # Calculate statistics
-    stats = {
-        "min": min(times),
-        "max": max(times),
-        "mean": statistics.mean(times),
-        "median": statistics.median(times)
-    }
-    
-    return result, stats
+    return Div(
+        *children,
+        data_slot=f"slot-level-{depth}",
+        cls=f"level-{depth}"
+    )
 
 # Create test content of different sizes
 def generate_test_content(size: str) -> str:
@@ -92,14 +72,11 @@ def test_parser_performance(content_size: str):
     content = generate_test_content(content_size)
     
     # Measure parsing time
-    result, stats = time_execution(parse, content)
+    result, parse_time = time_execution(parse, content)
     
     # Print performance statistics
     print(f"\nParser performance with {content_size} content:")
-    print(f"  Min: {stats['min']:.4f}s")
-    print(f"  Max: {stats['max']:.4f}s")
-    print(f"  Mean: {stats['mean']:.4f}s")
-    print(f"  Median: {stats['median']:.4f}s")
+    print(f"  Time: {parse_time:.4f}s")
     
     # Basic verification that parsing succeeded
     assert result is not None
@@ -119,7 +96,7 @@ def test_slot_filling_performance():
     def create_nested_element(depth: int, width: int) -> FT:
         """Create a nested element structure for testing."""
         if depth <= 0:
-            return P(f"Content at leaf level", data_slot=f"slot-leaf")
+            return P("Content at leaf level", data_slot="slot-leaf")
         
         children = []
         for i in range(width):
@@ -135,14 +112,11 @@ def test_slot_filling_performance():
     slots = {}
     
     # Measure slot filling time
-    result, stats = time_execution(fill_slots, element, slots)
+    result, fill_time = time_execution(fill_slots, element, slots)
     
     # Print performance statistics
     print("\nSlot filling performance:")
-    print(f"  Min: {stats['min']:.4f}s")
-    print(f"  Max: {stats['max']:.4f}s")
-    print(f"  Mean: {stats['mean']:.4f}s")
-    print(f"  Median: {stats['median']:.4f}s")
+    print(f"  Time: {fill_time:.4f}s")
     
     # Basic verification
     assert result is not None
@@ -161,14 +135,11 @@ def test_rendering_performance():
             return parse(content)
         
         # Measure parsing time
-        result, stats = time_execution(parse_content)
+        result, parse_time = time_execution(parse_content)
         
         # Print performance statistics
         print("\nParsing performance:")
-        print(f"  Min: {stats['min']:.4f}s")
-        print(f"  Max: {stats['max']:.4f}s")
-        print(f"  Mean: {stats['mean']:.4f}s")
-        print(f"  Median: {stats['median']:.4f}s")
+        print(f"  Time: {parse_time:.4f}s")
         
         # Basic verification
         assert result is not None

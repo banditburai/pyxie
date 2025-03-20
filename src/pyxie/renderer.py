@@ -14,7 +14,7 @@
 
 """Convert markdown content to HTML using mistletoe's HTML renderer."""
 
-from typing import Dict, List, Optional, Any, Protocol, NamedTuple, Set, Tuple
+from typing import Dict, List, Optional, Protocol, NamedTuple, Set, Tuple
 from functools import lru_cache
 import re
 from html import escape

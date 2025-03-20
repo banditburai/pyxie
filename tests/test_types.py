@@ -1,7 +1,6 @@
 def test_image_property(tmp_path):
     """Test the image property with different scenarios."""
     from pyxie.types import ContentItem
-    from pathlib import Path
     
     # Create a dummy source path 
     source_path = tmp_path / "test.md"

@@ -1,7 +1,7 @@
 """Tests for query functionality."""
 
 import pytest
-from typing import List, Dict, Any, Optional, TypedDict, Literal, get_type_hints
+from typing import List, Dict, Any, Optional, TypedDict
 from datetime import datetime
 
 from pyxie.query import Query, QueryResult

@@ -104,6 +104,9 @@ def should_ignore_tag(content: str, tag_pos: int, tag: str,
     # Skip tags in code blocks or those that don't need closing
     if is_in_code_block(content, tag_pos, code_blocks) or tag.lower() in IGNORED_TAGS:
         return True
+    # Skip common HTML tags
+    if tag.lower() in HTML_TAGS:
+        return True
     # Skip tags in inline code or list items
     if any(start <= tag_pos < end for spans in [inline_spans, list_item_spans] for start, end in spans):
         return True

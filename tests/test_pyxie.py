@@ -1,28 +1,40 @@
 """Test Pyxie class functionality."""
 
 import pytest
-import pytest_asyncio
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict
 from dataclasses import dataclass
 
 from pyxie.pyxie import Pyxie
-from pyxie.errors import PyxieError
-from pyxie.types import ContentItem
-from pyxie.layouts import layout, registry
+from pyxie.layouts import registry
+
+@dataclass
+class ContentHelper:
+    """Helper for creating test content."""
+    content: str
+    template: str = "test"
+    metadata: Dict[str, str] = None
 
 # Test utilities
+def create_test_post(test_dir: Path, name: str, content: str) -> Path:
+    """Create a test post file."""
+    post_dir = test_dir / "content"
+    post_dir.mkdir(exist_ok=True)
+    post_file = post_dir / f"{name}.md"
+    post_file.write_text(content)
+    return post_file
+
 @dataclass
 class ContentFixture:
     """Helper for creating test content."""
     content: str
-    layout: str = "test"
+    template: str = "test"
     metadata: Dict[str, str] = None
     
     def write_to(self, path: Path) -> None:
         """Write content to a file."""
         content = "---\n"
-        content += f"layout: {self.layout}\n"
+        content += f"layout: {self.template}\n"
         if self.metadata:
             for key, value in self.metadata.items():
                 content += f"{key}: {value}\n"
@@ -33,31 +45,41 @@ class ContentFixture:
 
 # Fixtures
 @pytest.fixture
-def test_paths(tmp_path: Path) -> Dict[str, Path]:
+def test_paths(tmp_path):
     """Create test directory structure."""
-    paths = {
-        'layouts': tmp_path / "layouts",
-        'content': tmp_path / "content",
-        'cache': tmp_path / "cache"
+    content_dir = tmp_path / "content"
+    cache_dir = tmp_path / "cache"
+    content_dir.mkdir()
+    cache_dir.mkdir()
+    return {
+        "app_root": tmp_path,
+        "content": content_dir,
+        "cache": cache_dir
     }
-    for path in paths.values():
-        path.mkdir()
-    return paths
 
 @pytest.fixture
-def pyxie(test_paths: Dict[str, Path]) -> Pyxie:
-    """Create a test Pyxie instance."""
-    pyxie = Pyxie(
-        content_dir=test_paths['content'],
-        cache_dir=test_paths['cache']
+def pyxie(test_paths):
+    """Create a Pyxie instance for testing."""
+    return Pyxie(
+        content_dir=test_paths["content"],
+        cache_dir=test_paths["cache"]
     )
-    return pyxie
+
+@pytest.fixture
+def test_content():
+    """Create test content."""
+    return ContentHelper(
+        content="Test content",
+        metadata={"title": "Test"}
+    )
 
 # Test cases
 def test_initialization(pyxie: Pyxie) -> None:
-    """Test basic initialization."""
+    """Test Pyxie initialization."""
     assert pyxie.content_dir is not None
-    assert pyxie._collections is not None
+    assert pyxie.cache is not None
+    assert pyxie.default_metadata is not None
+    assert pyxie.default_layout is not None
 
 def test_add_collection(pyxie: Pyxie) -> None:
     """Test adding content collections."""
@@ -184,7 +206,7 @@ def auto_test_layout(title="Auto Test") -> FT:
         registry._layouts.clear()
         
         # Test with auto-discovery enabled (default)
-        pyxie1 = Pyxie(
+        Pyxie(
             content_dir=test_paths['content'],
             cache_dir=test_paths['cache']
         )
@@ -195,7 +217,7 @@ def auto_test_layout(title="Auto Test") -> FT:
         registry._layouts.clear()
         
         # Test with auto-discovery disabled
-        pyxie2 = Pyxie(
+        Pyxie(
             content_dir=test_paths['content'],
             cache_dir=test_paths['cache'],
             auto_discover_layouts=False
@@ -234,7 +256,7 @@ def custom_path_layout(title="Custom Path") -> FT:
         registry._layouts.clear()
         
         # Test with custom layout path
-        pyxie = Pyxie(
+        Pyxie(
             content_dir=test_paths['content'],
             cache_dir=test_paths['cache'],
             layout_paths=[custom_dir]
@@ -323,4 +345,161 @@ def test_default_layout_from_metadata(test_paths: Dict[str, Path]) -> None:
     )
     
     # Should use the common layout value
-    assert pyxie3.default_layout == "same_layout" 
+    assert pyxie3.default_layout == "same_layout"
+
+@pytest.mark.asyncio
+async def test_watcher_initialization(test_paths: Dict[str, Path], monkeypatch) -> None:
+    """Test watcher initialization without watchfiles installed."""
+    # Mock watchfiles import to fail
+    def mock_import(*args):
+        raise ImportError("watchfiles not installed")
+    monkeypatch.setattr("builtins.__import__", mock_import)
+    
+    # Create a Pyxie instance with reload=True but without watchfiles
+    pyxie = Pyxie(
+        content_dir=test_paths["content"],
+        cache_dir=test_paths["cache"],
+        reload=True
+    )
+    
+    # Watcher should not be active since watchfiles is not installed
+    assert pyxie._watcher_task is None
+
+@pytest.mark.asyncio
+async def test_watcher_functionality(test_paths: Dict[str, Path], monkeypatch) -> None:
+    """Test watcher functionality with mocked watchfiles."""
+    import asyncio
+    from unittest.mock import MagicMock
+
+    # Create a mock async iterator
+    class MockAsyncIterator:
+        def __init__(self):
+            self.called = False
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self.called:
+                self.called = True
+                return {('modified', str(test_paths["content"] / "test.md"))}
+            await asyncio.sleep(0.1)  # Keep running
+            return {('modified', str(test_paths["content"] / "test.md"))}
+
+        async def close(self):
+            pass
+
+    # Mock watchfiles.awatch
+    mock_awatch = MagicMock()
+    mock_awatch.return_value = MockAsyncIterator()
+    monkeypatch.setattr("watchfiles.awatch", mock_awatch)
+
+    # Create a Pyxie instance with reload=True
+    pyxie = Pyxie(
+        content_dir=test_paths["content"],
+        cache_dir=test_paths["cache"],
+        reload=False  # Don't auto-start watching
+    )
+
+    # Start watching
+    await pyxie.start_watching()
+    assert pyxie._watcher_task is not None
+    assert not pyxie._watcher_task.done()
+
+    # Wait a bit for the watcher to start
+    await asyncio.sleep(0.1)
+
+    # Stop watching
+    await pyxie.stop_watching()
+    assert pyxie._watcher_task is None
+
+    # Verify mock was called with correct directory
+    mock_awatch.assert_called_once_with(str(test_paths["content"]))
+
+@pytest.mark.asyncio
+async def test_watcher_error_handling(test_paths: Dict[str, Path], monkeypatch) -> None:
+    """Test error handling in watcher."""
+    import asyncio
+    from unittest.mock import MagicMock
+
+    # Create a mock async iterator that raises an exception
+    class MockErrorIterator:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise RuntimeError("Test error")
+
+        async def close(self):
+            pass
+
+    # Mock watchfiles.awatch
+    mock_awatch = MagicMock()
+    mock_awatch.return_value = MockErrorIterator()
+    monkeypatch.setattr("watchfiles.awatch", mock_awatch)
+
+    # Create a Pyxie instance with reload=True
+    pyxie = Pyxie(
+        content_dir=test_paths["content"],
+        cache_dir=test_paths["cache"],
+        reload=False  # Don't auto-start watching
+    )
+
+    # Start watching
+    await pyxie.start_watching()
+    assert pyxie._watcher_task is not None
+
+    # Wait for the error to be handled
+    await asyncio.sleep(0.1)
+    assert pyxie._watcher_task is None
+
+@pytest.mark.asyncio
+async def test_watcher_restart_on_completion(test_paths: Dict[str, Path], monkeypatch) -> None:
+    """Test that watcher restarts if task completes unexpectedly."""
+    import asyncio
+    from unittest.mock import MagicMock
+
+    # Create a mock async iterator that completes after one iteration
+    class MockCompletingIterator:
+        def __init__(self):
+            self.iteration = 0
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if self.iteration == 0:
+                self.iteration += 1
+                return {('modified', str(test_paths["content"] / "test.md"))}
+            raise StopAsyncIteration
+
+        async def close(self):
+            pass
+
+    # Mock watchfiles.awatch
+    mock_awatch = MagicMock()
+    mock_awatch.return_value = MockCompletingIterator()
+    monkeypatch.setattr("watchfiles.awatch", mock_awatch)
+
+    # Create a Pyxie instance with reload=True
+    pyxie = Pyxie(
+        content_dir=test_paths["content"],
+        cache_dir=test_paths["cache"],
+        reload=True  # Enable auto-restart
+    )
+
+    # Start watching
+    await pyxie.start_watching()
+    assert pyxie._watcher_task is not None
+
+    # Wait for the first watcher to complete and restart
+    for _ in range(10):  # Try up to 10 times
+        await asyncio.sleep(0.1)
+        if pyxie._watcher_task and not pyxie._watcher_task.done():
+            break
+    else:
+        assert False, "Watcher task did not restart"
+
+    # Stop watching
+    await pyxie.stop_watching()
+    assert pyxie._watcher_task is None

@@ -1,13 +1,10 @@
 """Tests for the slot filling functionality."""
 
 import pytest
-from pathlib import Path
-from typing import Dict, List, Any
-from lxml import html, etree
-from fastcore.xml import Div, P, H1, Section, Article, FT, to_xml
+from lxml import html
+from fastcore.xml import Div, P, H1, Section, Article, to_xml
 
-from pyxie.slots import fill_slots, SlotFillResult
-from pyxie.errors import PyxieError
+from pyxie.slots import fill_slots
 
 # Test fixtures
 @pytest.fixture
@@ -159,8 +156,7 @@ class TestSlotErrorHandling:
     
     def test_invalid_slot_target(self):
         """Test behavior when trying to fill a slot on an invalid target."""
-        from pyxie.slots import fill_slots, SlotError
-        from fastcore.xml import Div, to_xml
+        from pyxie.slots import fill_slots
         
         # Create a slot value
         slot_value = "Test content"
@@ -180,8 +176,8 @@ class TestSlotErrorHandling:
     
     def test_slot_name_conflict(self):
         """Test behavior with conflicting slot names."""
-        from pyxie.slots import fill_slots, SlotError
-        from fastcore.xml import Div, to_xml
+        from pyxie.slots import fill_slots
+        from fastcore.xml import Div
         
         # Create an element with two identical slots
         element = Div(
@@ -206,8 +202,8 @@ class TestSlotErrorHandling:
     
     def test_nested_slot_errors(self):
         """Test error handling in deeply nested slots."""
-        from pyxie.slots import fill_slots, SlotError
-        from fastcore.xml import Div, H1, P, to_xml
+        from pyxie.slots import fill_slots
+        from fastcore.xml import Div, H1, P
         
         # Create a complex nested structure with potentially problematic slots
         element = Div(
@@ -241,7 +237,7 @@ class TestSlotErrorHandling:
     
     def test_cyclic_slot_references(self):
         """Test behavior with potential cyclic slot references."""
-        from pyxie.slots import fill_slots, SlotError
+        from pyxie.slots import fill_slots
         from fastcore.xml import Div, P
         
         # Create content for slots - with potential for cycles
@@ -273,7 +269,7 @@ class TestSlotErrorHandling:
     def test_missing_slots(self):
         """Test behavior when trying to fill slots that don't exist."""
         from pyxie.slots import fill_slots
-        from fastcore.xml import Div, P, to_xml
+        from fastcore.xml import Div
         
         # Create element with slots
         element = Div(

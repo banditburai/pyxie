@@ -2,13 +2,8 @@
 
 import logging
 import pytest
-from typing import Dict, List, Optional, Any
-from pyxie.parser import parse, iter_blocks, parse_frontmatter, ContentBlock, ParsedContent, HTML_TAGS
-from pyxie.errors import ParseError, FrontmatterError, BlockError
+from pyxie.parser import parse, iter_blocks, parse_frontmatter, HTML_TAGS
 from pathlib import Path
-from pytest import raises
-import yaml
-from textwrap import dedent
 
 # Test fixtures
 @pytest.fixture

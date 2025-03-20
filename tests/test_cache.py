@@ -1,8 +1,6 @@
 """Tests for the cache module."""
 
 import pytest
-from pathlib import Path
-from typing import Dict, Any
 
 from pyxie.cache import Cache
 

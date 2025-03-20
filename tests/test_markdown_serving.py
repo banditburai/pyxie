@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from starlette.requests import Request
 from starlette.responses import Response
 
 from pyxie import Pyxie

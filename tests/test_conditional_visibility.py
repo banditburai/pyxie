@@ -14,7 +14,6 @@
 
 """Test conditional visibility with data-pyxie-show attributes."""
 
-import pytest
 from lxml import html, etree
 
 from pyxie.renderer import process_conditional_visibility, PYXIE_SHOW_ATTR, check_visibility_condition
@@ -178,14 +177,12 @@ def test_process_conditional_visibility_negation():
 
 def test_process_conditional_visibility_complex_conditions():
     """Test conditional visibility with complex conditions combining normal and negated slots."""
-    from pyxie.renderer import check_visibility_condition
-    
     # Test the check_visibility_condition function directly with various combinations
     # Basic checks
-    assert check_visibility_condition(["!missing"], {"present"}) == True
-    assert check_visibility_condition(["!present"], {"present"}) == False
-    assert check_visibility_condition(["present", "!missing"], {"present"}) == True
-    assert check_visibility_condition(["missing", "!present"], {"present"}) == False
+    assert check_visibility_condition(["!missing"], {"present"})
+    assert not check_visibility_condition(["!present"], {"present"})
+    assert check_visibility_condition(["present", "!missing"], {"present"})
+    assert not check_visibility_condition(["missing", "!present"], {"present"})
     
     # Complex combinations with multiple slots
     test_cases = [

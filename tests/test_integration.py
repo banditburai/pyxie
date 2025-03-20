@@ -3,11 +3,10 @@
 import pytest
 import tempfile
 from pathlib import Path
-from typing import Dict, Any, Optional, Generator
+from typing import Generator
 
 from pyxie import Pyxie
-from pyxie.errors import PyxieError
-from fastcore.xml import Div, H1, P, Article, FT, to_xml
+from fastcore.xml import Div, H1, P, FT, to_xml
 from pyxie.layouts import layout
 from pyxie.renderer import render_content
 
@@ -176,11 +175,10 @@ def test_custom_layout(pyxie_instance: Pyxie, test_post: Path) -> None:
     pyxie_instance._load_collection(pyxie_instance._collections["content"])
     
     # Define a custom layout
-    custom_layout = Div(
+    Div(
         H1(None, data_slot="title", cls="custom-title"),
         P(None, data_slot="custom-slot", cls="custom-slot"),
-        Div(None, data_slot="content", cls="custom-content"),
-        cls="custom-container"
+        cls="custom-layout"
     )
     
     # Get the content item
@@ -364,7 +362,7 @@ This is a paragraph with a line break <br> here.
 """
     
     # Create the test file
-    file_path = create_test_post(test_dir, "self-closing-tags-test", content)
+    create_test_post(test_dir, "self-closing-tags-test", content)
     
     # Create a Pyxie instance
     pyxie = Pyxie(content_dir=test_dir)

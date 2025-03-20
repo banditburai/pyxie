@@ -1,11 +1,7 @@
 """Test the renderer module."""
 
-import re
 import pytest
-from unittest.mock import patch
-from mistletoe import Document
 from pyxie.renderer import PyxieHTMLRenderer, render_markdown, process_conditional_visibility
-from pyxie.types import ContentBlock
 
 @pytest.fixture
 def renderer():

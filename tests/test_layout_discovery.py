@@ -2,13 +2,10 @@
 
 import pytest
 from pathlib import Path
-import sys
-import os
-import importlib
-from typing import Dict, List, Optional
+from typing import Dict
 
 from pyxie.pyxie import Pyxie
-from pyxie.layouts import layout, registry
+from pyxie.layouts import registry
 
 
 @pytest.fixture
@@ -70,7 +67,7 @@ def test_autodiscover_root(test_paths):
     create_layout_file(test_paths['app_root'] / "main.py", "main", "root_layout")
     
     # Initialize Pyxie with auto-discovery
-    pyxie = Pyxie(
+    Pyxie(
         content_dir=test_paths['content'],
         cache_dir=test_paths['cache']
     )
@@ -87,7 +84,7 @@ def test_autodiscover_layouts_dir(test_paths):
     create_layout_file(test_paths['layouts'] / "page.py", "page", "page_layout")
     
     # Initialize Pyxie with auto-discovery
-    pyxie = Pyxie(
+    Pyxie(
         content_dir=test_paths['content'],
         cache_dir=test_paths['cache']
     )
@@ -104,7 +101,7 @@ def test_autodiscover_subdirectories(test_paths):
     create_layout_file(test_paths['static_subdir'] / "component.py", "component", "component_layout")
     
     # Initialize Pyxie with auto-discovery
-    pyxie = Pyxie(
+    Pyxie(
         content_dir=test_paths['content'],
         cache_dir=test_paths['cache']
     )
@@ -123,7 +120,7 @@ def test_autodiscover_custom_paths(test_paths):
     create_layout_file(custom_dir / "custom.py", "custom", "custom_layout")
     
     # Initialize Pyxie with custom layout path
-    pyxie = Pyxie(
+    Pyxie(
         content_dir=test_paths['content'],
         cache_dir=test_paths['cache'],
         layout_paths=[custom_dir]
@@ -140,7 +137,7 @@ def test_autodiscover_disabled(test_paths):
     create_layout_file(test_paths['layouts'] / "page.py", "page", "page_layout")
     
     # Initialize Pyxie with auto-discovery disabled
-    pyxie = Pyxie(
+    Pyxie(
         content_dir=test_paths['content'],
         cache_dir=test_paths['cache'],
         auto_discover_layouts=False
@@ -161,7 +158,7 @@ def test_autodiscover_error_handling(test_paths):
     create_layout_file(test_paths['layouts'] / "valid.py", "valid", "valid_layout")
     
     # Initialize Pyxie - should handle the error gracefully
-    pyxie = Pyxie(
+    Pyxie(
         content_dir=test_paths['content'],
         cache_dir=test_paths['cache']
     )
@@ -177,10 +174,10 @@ def test_autodiscover_nonexistent_directory(test_paths):
     
     # Initialize Pyxie with a nonexistent directory
     nonexistent_dir = test_paths['app_root'] / "nonexistent"
-    pyxie = Pyxie(
+    Pyxie(
         content_dir=test_paths['content'],
         cache_dir=test_paths['cache'],
-        layout_paths=[nonexistent_dir, test_paths['layouts']]  # Include both
+        layout_paths=[nonexistent_dir]
     )
     
     # Check that valid layout was discovered despite the nonexistent directory
@@ -206,7 +203,7 @@ def layout_two(title="Layout Two") -> FT:
     multiple_file.write_text(content)
     
     # Initialize Pyxie
-    pyxie = Pyxie(
+    Pyxie(
         content_dir=test_paths['content'],
         cache_dir=test_paths['cache']
     )
@@ -258,7 +255,7 @@ def invalid_layout():
 """)
 
     # Initialize Pyxie with auto-discovery
-    pyxie = Pyxie(tmp_path, auto_discover_layouts=True, layout_paths=[layout_dir])
+    Pyxie(tmp_path, auto_discover_layouts=True, layout_paths=[layout_dir])
 
     # Verify only the valid layout was registered
     assert "valid" in registry._layouts
@@ -308,7 +305,7 @@ def invalid_layout():
 """)
 
     # Initialize Pyxie with auto-discovery
-    pyxie = Pyxie(tmp_path, auto_discover_layouts=True, layout_paths=[layout_dir])
+    Pyxie(tmp_path, auto_discover_layouts=True, layout_paths=[layout_dir])
 
     # Verify only the valid layout was registered
     assert "valid" in registry._layouts

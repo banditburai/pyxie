@@ -1,8 +1,5 @@
 """Tests for content rebuilding functionality."""
 
-import pytest
-from pathlib import Path
-
 from pyxie import Pyxie
 
 def test_rebuild_content(tmp_path):

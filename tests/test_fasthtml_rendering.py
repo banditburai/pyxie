@@ -5,8 +5,6 @@ These tests focus on verifying that FastHTML components render correctly to XML,
 especially for complex nested component structures.
 """
 
-import pytest
-from typing import List, Tuple
 import logging
 
 from pyxie.fasthtml import render_fasthtml_block

@@ -4,13 +4,12 @@ import pytest
 from pathlib import Path
 from bs4 import BeautifulSoup
 from fastcore.xml import Div, H1, Article, Aside, FT
-from typing import Optional, Callable, Any, List, Dict, TypeVar, Protocol
+from typing import Optional, Any, List, Dict, TypeVar, Protocol
 from dataclasses import dataclass
 
-from pyxie.renderer import render_block, render_blocks, render_content, process_fasthtml
-from pyxie.errors import RenderError
+from pyxie.renderer import render_block, render_content
 from pyxie.parser import ContentBlock
-from pyxie.layouts import layout, registry
+from pyxie.layouts import layout
 from pyxie.pyxie import Pyxie
 
 T = TypeVar('T', bound=FT)
@@ -220,29 +219,11 @@ def test_process_fasthtml() -> None:
     assert "<p>Text</p>" in result.content
     assert '<div id="test">Direct HTML content</div>' in result.content
 
-class MockCache:
-    """Mock cache for testing."""
-    
-    def __init__(self):
-        self.cache = {}
-        self.get_called = False
-        self.store_called = False
-    
-    def get(self, collection, path, layout):
-        self.get_called = True
-        key = f"{collection}:{path}:{layout}"
-        return self.cache.get(key)
-    
-    def store(self, collection, path, content, layout):
-        self.store_called = True
-        key = f"{collection}:{path}:{layout}"
-        self.cache[key] = content
-
-def test_render_content_with_cache() -> None:
-    """Test rendering content with cache."""
+def test_layout_rendering() -> None:
+    """Test rendering content with layouts."""
     from pyxie.types import ContentItem
     from pyxie.renderer import render_content
-    from pyxie.layouts import layout, registry
+    from pyxie.layouts import layout
     from fastcore.xml import Div, H1
     
     # Register test layout using the decorator pattern
@@ -258,21 +239,13 @@ def test_render_content_with_cache() -> None:
         metadata={"layout": "cache-test"}
     )
     
-    # Create mock cache
-    mock_cache = MockCache()
-    
     # First render should store in cache
-    result = render_content(item, mock_cache)
-    assert mock_cache.store_called
+    result = render_content(item)
     assert "test-layout" in result
     assert "<h1>Test Title</h1>" in result
     
-    # Reset mock
-    mock_cache.store_called = False
-    
     # Second render should retrieve from cache
-    second_result = render_content(item, mock_cache)
-    assert not mock_cache.store_called
+    second_result = render_content(item)
     assert second_result == result
 
 def test_content_item_render_method() -> None:

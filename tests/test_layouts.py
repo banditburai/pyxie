@@ -1,7 +1,7 @@
 def test_layout_inheritance():
     """Test that layouts can inherit from other layouts."""
     from pyxie.layouts import layout, get_layout
-    from fastcore.xml import Html, Head, Body, Title, Div, H1, FT
+    from fastcore.xml import Html, Head, Body, Title, Div, H1
     
     # Create a base layout
     @layout("base")
@@ -46,7 +46,7 @@ def test_layout_inheritance():
 def test_layout_composition():
     """Test composing layouts from reusable components."""
     from pyxie.layouts import layout, get_layout
-    from fastcore.xml import Div, Nav, Footer, A, P, FT
+    from fastcore.xml import Div, Nav, Footer, A, P
     
     # Create component functions (not registered as layouts)
     def navigation_component(links=None):
@@ -108,10 +108,10 @@ def test_layout_composition():
     assert "<nav" in xml_no_footer
     assert "<footer" not in xml_no_footer
 
-def test_nested_layout_composition():
+def test_deep_nesting():
     """Test deeply nested layout composition with multiple levels."""
     from pyxie.layouts import layout, get_layout
-    from fastcore.xml import Div, H1, H2, P, FT
+    from fastcore.xml import Div, H1, H2, P
     
     # Create nested layouts
     @layout("section")

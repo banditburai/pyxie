@@ -15,11 +15,10 @@
 """Main Pyxie class for content management and rendering."""
 
 import logging
+import asyncio
 from pathlib import Path
 from typing import Dict, Optional, Any, Tuple, List, TypeVar, cast
 from collections import Counter
-import importlib.util
-import inspect
 
 from .constants import DEFAULT_METADATA
 from .types import ContentItem, PathLike
@@ -49,7 +48,7 @@ class Pyxie:
         default_layout: str = "default",
         auto_discover_layouts: bool = True,
         layout_paths: Optional[List[PathLike]] = None,
-        watch_content: bool = False
+        reload: bool = False
     ):
         """Initialize Pyxie content manager."""
         self.content_dir = Path(content_dir) if content_dir else None
@@ -66,15 +65,23 @@ class Pyxie:
         self.cache = Cache(cache_dir) if cache_dir else None
         self._collections: Dict[str, Collection] = {}
         self._items: Dict[str, ContentItem] = {}
-        self.watcher = None
+        self._watcher_task = None
+        self._last_check = 0
+        self.reload = reload
         
         if self.content_dir:
             self.add_collection("content", self.content_dir)                    
         if auto_discover_layouts:
             registry.discover_layouts(self.content_dir, layout_paths)
             
-        if watch_content:
-            self.start_watching()
+        if reload:
+            try:
+                if asyncio.get_event_loop().is_running():
+                    asyncio.create_task(self.start_watching())
+                else:
+                    log(logger, "Pyxie", "warning", "init", "Event loop not running, skipping auto-start of watcher")
+            except ImportError:
+                log(logger, "Pyxie", "warning", "init", "asyncio not installed, skipping auto-start of watcher")
     
     @property
     def collections(self) -> List[str]:
@@ -233,10 +240,6 @@ class Pyxie:
         Returns:
             A tuple of (item, error) where error is None if successful
         """
-        # Check if we have a watcher enabled
-        if self.watcher:
-            self.watcher.check()
-            
         # Get all items matching the slug
         items = self.get_items(slug=slug, **kwargs).items
         if not items:
@@ -334,30 +337,79 @@ class Pyxie:
         if self.cache:
             self.cache.invalidate()
 
-    def start_watching(self) -> None:
+    async def start_watching(self) -> None:
         """Start watching content directories for changes."""
         if not self.content_dir:
             return
             
         try:
             from watchfiles import awatch
-            import asyncio
             
             async def watch_content():
-                async for changes in awatch(self.content_dir):
-                    logger.info(f"Content changes detected: {changes}")
-                    self.rebuild_content()
-                    
-            self.watcher = asyncio.create_task(watch_content())
-            logger.info("Content watching started")
-        except ImportError:
-            logger.warning("watchfiles not installed. Content watching disabled.")
-        except Exception as e:
-            logger.error(f"Failed to start content watching: {e}")
+                watcher = None
+                try:
+                    watcher = awatch(str(self.content_dir))
+                    async for changes in watcher:
+                        log(logger, "Pyxie", "info", "watch", f"Content changes detected: {changes}")
+                        self.rebuild_content()
+                except StopAsyncIteration:
+                    log(logger, "Pyxie", "info", "watch", "Watcher completed normally")
+                except asyncio.CancelledError:
+                    log(logger, "Pyxie", "info", "watch", "Watcher cancelled")
+                    raise  # Re-raise to properly handle cancellation
+                except Exception as e:
+                    log(logger, "Pyxie", "error", "watch", f"Error in content watcher: {e}")
+                finally:
+                    if watcher and hasattr(watcher, 'close'):
+                        try:
+                            await watcher.close()
+                        except Exception as e:
+                            log(logger, "Pyxie", "error", "watch", f"Error closing watcher: {e}")
+                    self._watcher_task = None
+                    if self.reload:  # Only restart if reload is True
+                        await self.start_watching()
             
-    def stop_watching(self) -> None:
+            # Cancel existing task if any
+            if self._watcher_task:
+                self._watcher_task.cancel()
+                try:
+                    await asyncio.shield(self._watcher_task)
+                except asyncio.CancelledError:
+                    pass
+                self._watcher_task = None
+                
+            # Start new watcher task
+            self._watcher_task = asyncio.create_task(watch_content())
+            log(logger, "Pyxie", "info", "watch", "Content watching started")
+            
+        except ImportError:
+            log(logger, "Pyxie", "warning", "watch", "watchfiles not installed. Content watching disabled.")
+        except Exception as e:
+            log(logger, "Pyxie", "error", "watch", f"Failed to start content watching: {e}")
+            
+    async def stop_watching(self) -> None:
         """Stop watching content directories for changes."""
-        if self.watcher:
-            self.watcher.cancel()
-            self.watcher = None
-            logger.info("Content watching stopped")        
+        if self._watcher_task:
+            self._watcher_task.cancel()
+            try:
+                await asyncio.shield(self._watcher_task)
+            except asyncio.CancelledError:
+                pass
+            self._watcher_task = None
+            log(logger, "Pyxie", "info", "watch", "Content watching stopped")
+            
+    async def check_content(self) -> None:
+        """Check if content needs to be rebuilt."""
+        if not self._watcher_task:
+            if self.reload:  # Only restart if reload is True
+                await self.start_watching()
+            return
+            
+        try:
+            # Check if the watcher task is still running
+            if self._watcher_task.done():
+                log(logger, "Pyxie", "warning", "watch", "Content watcher task completed unexpectedly")
+                if self.reload:  # Only restart if reload is True
+                    await self.start_watching()
+        except Exception as e:
+            log(logger, "Pyxie", "error", "watch", f"Error checking content watcher: {e}")        

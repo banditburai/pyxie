@@ -6,12 +6,10 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Generator, Callable
 import logging
 from unittest.mock import patch
-import os
 from dataclasses import dataclass
 
 from pyxie.types import ContentItem
 from pyxie.errors import CollectionError
-from pyxie.parser import parse, ParsedContent
 
 # Mock for parse result - using a structure similar to the real ParsedContent
 @dataclass
