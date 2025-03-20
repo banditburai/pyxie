@@ -336,6 +336,18 @@ class Pyxie:
         # Invalidate cache if it exists
         if self.cache:
             self.cache.invalidate()
+            
+        # Touch a Python file to trigger FastHTML's reload
+        if self.reload:
+            try:
+                import os
+                import pathlib
+                # Touch the main.py file to trigger reload
+                main_file = pathlib.Path(os.path.dirname(__file__)) / "__init__.py"
+                if main_file.exists():
+                    os.utime(main_file, None)
+            except Exception as e:
+                log(logger, "Pyxie", "error", "reload", f"Failed to trigger reload: {e}")
 
     async def start_watching(self) -> None:
         """Start watching content directories for changes."""
