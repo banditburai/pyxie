@@ -2,7 +2,7 @@
 
 import logging
 import pytest
-from pyxie.parser import parse, iter_blocks, parse_frontmatter, HTML_TAGS
+from pyxie.parser import parse, find_content_blocks, parse_frontmatter, HTML_TAGS
 from pathlib import Path
 
 # Test fixtures
@@ -91,7 +91,7 @@ def test_no_frontmatter() -> None:
 def test_content_block_extraction(sample_markdown: str) -> None:
     """Test extraction of content blocks from markdown."""
     _, content = parse_frontmatter(sample_markdown)
-    blocks = list(iter_blocks(content))
+    blocks = find_content_blocks(content)
     
     assert len(blocks) == 3
     
@@ -113,7 +113,7 @@ def test_content_block_extraction(sample_markdown: str) -> None:
 def test_minimal_block_extraction(minimal_markdown: str) -> None:
     """Test handling of markdown without explicit blocks."""
     _, content = parse_frontmatter(minimal_markdown)
-    blocks = list(iter_blocks(content))
+    blocks = find_content_blocks(content)
     
     # Should not extract any blocks since there are no XML tags
     assert len(blocks) == 0
@@ -682,3 +682,82 @@ def test_html_tags_in_real_content(caplog):
     assert 'Div("content", cls="my-class")' in content_text, "HTML Div constructor not preserved in content"
     assert 'Button("Click me", onclick="handleClick()")' in content_text, "HTML Button constructor not preserved in content"
     assert 'P("paragraph text")' in content_text, "HTML P constructor not preserved in content" 
+
+def test_fasthtml_in_markdown_code_blocks():
+    """Test that FastHTML blocks inside markdown code blocks are not parsed."""
+    content = """---
+title: Test Document with FastHTML in Code Blocks
+---
+
+<content>
+Here is a markdown example with FastHTML:
+
+```markdown
+---
+title: "Hello, Pyxie!"
+date: 2024-03-20
+status: published
+---
+
+<content>
+# Welcome to My Site
+
+This is my first Pyxie post! The content inside this XML-style block
+will be inserted into our layout's content slot and styled automatically.
+
+You can write regular markdown here:
+- Lists
+- **Bold text**
+- *Italic text*
+- [Links](/somewhere)
+
+<!-- Mix in some HTML if you want -->
+<div class="custom-class">HTML works too!</div>
+
+<!-- Use FastHTML for dynamic content -->
+<fasthtml>
+# Import components from your app
+from components import Button
+from datetime import datetime
+
+def Greeting():
+    return Div(
+        H1("Hello, World!", cls="text-3xl font-bold"),
+        P(f"The time is: {datetime.now().strftime('%H:%M')}"),
+        Button(text="Click me!", onclick="alert('Hello!')")
+    )
+
+# Use show() to render FastHTML components
+show(Greeting())
+</fasthtml>
+
+Back to regular markdown content...
+</content>
+```
+
+And another example with a FastHTML block:
+
+```markdown
+<fasthtml>
+def Example():
+    return P("This is a FastHTML example")
+</fasthtml>
+```
+</content>
+"""
+    
+    parsed = parse(content)
+    
+    # Check that only the outer content block is found
+    assert len(parsed.blocks) == 1
+    assert "content" in parsed.blocks
+    
+    # Check that none of the FastHTML blocks in code blocks are treated as content blocks
+    assert "fasthtml" not in parsed.blocks
+    
+    # Check that the content block contains both code examples
+    content_block = parsed.get_block("content")
+    assert "```markdown" in content_block.content
+    assert "<fasthtml>" in content_block.content
+    assert "def Greeting():" in content_block.content
+    assert "def Example():" in content_block.content 
