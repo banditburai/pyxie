@@ -2,7 +2,7 @@
 
 import logging
 import pytest
-from pyxie.parser import parse, find_content_blocks, parse_frontmatter, HTML_TAGS
+from pyxie.parser import parse, iter_blocks, parse_frontmatter, HTML_TAGS
 from pathlib import Path
 
 # Test fixtures
@@ -91,7 +91,7 @@ def test_no_frontmatter() -> None:
 def test_content_block_extraction(sample_markdown: str) -> None:
     """Test extraction of content blocks from markdown."""
     _, content = parse_frontmatter(sample_markdown)
-    blocks = find_content_blocks(content)
+    blocks = list(iter_blocks(content))
     
     assert len(blocks) == 3
     
@@ -113,7 +113,7 @@ def test_content_block_extraction(sample_markdown: str) -> None:
 def test_minimal_block_extraction(minimal_markdown: str) -> None:
     """Test handling of markdown without explicit blocks."""
     _, content = parse_frontmatter(minimal_markdown)
-    blocks = find_content_blocks(content)
+    blocks = list(iter_blocks(content))
     
     # Should not extract any blocks since there are no XML tags
     assert len(blocks) == 0
@@ -761,3 +761,96 @@ def Example():
     assert "<fasthtml>" in content_block.content
     assert "def Greeting():" in content_block.content
     assert "def Example():" in content_block.content 
+
+def test_fasthtml_in_documentation_examples():
+    """Test that FastHTML blocks in documentation examples are not parsed."""
+    content = """---
+title: "Quick Start Guide: Build Your First Pyxie Site"
+date: 2024-03-20
+category: Basics
+layout: basic
+author: Pyxie Team
+excerpt: "Get started with Pyxie: Learn the basics of creating a new site, adding content, and customizing your layout."
+---
+
+<featured_image>
+![Getting Started with Pyxie](pyxie:code/1200/600)
+</featured_image>
+
+<toc>
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Project Setup](#project-setup)
+</toc>
+
+<content>
+Welcome to Pyxie! This guide will help you create your first site.
+
+## Installation
+
+```python
+from fasthtml.common import *
+from pyxie import Pyxie
+
+# Initialize Pyxie with content and layout directories
+pyxie = Pyxie(
+    "posts",                # Where to find your markdown content
+    live=True              # Enable live reloading for development
+)
+```
+
+Here's an example markdown file:
+
+```markdown
+---
+title: "Hello, Pyxie!"
+date: 2024-03-20
+status: published
+---
+
+<content>
+# Welcome to My Site
+
+<fasthtml>
+from components import Button
+from datetime import datetime
+
+def Greeting():
+    return Div(
+        H1("Hello, World!", cls="text-3xl font-bold"),
+        P(f"The time is: {datetime.now().strftime('%H:%M')}"),
+        Button(text="Click me!", onclick="alert('Hello!')")
+    )
+
+show(Greeting())
+</fasthtml>
+</content>
+```
+</content>
+
+<conclusion>
+You've now created your first Pyxie site!
+</conclusion>
+"""
+    
+    parsed = parse(content)
+    
+    # Check that only the expected blocks are found
+    assert set(parsed.blocks.keys()) == {"featured_image", "toc", "content", "conclusion"}
+    
+    # Check that none of the example blocks are treated as content blocks
+    content_block = parsed.get_block("content")
+    assert content_block is not None
+    
+    # The content should contain the example blocks as-is
+    assert "<content>" in content_block.content
+    assert "<fasthtml>" in content_block.content
+    assert "def Greeting():" in content_block.content
+    assert "show(Greeting())" in content_block.content
+    
+    # The example content block should not be parsed
+    example_content = parsed.get_block("content", 1)
+    assert example_content is None, "Example <content> block should not be parsed"
+    
+    # The example fasthtml block should not be parsed
+    assert "fasthtml" not in parsed.blocks, "Example <fasthtml> block should not be parsed" 

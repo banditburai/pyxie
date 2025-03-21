@@ -318,8 +318,7 @@ def convert_value(value: str) -> Any:
     value = value.strip()
     
     # Handle quoted values
-    if (value.startswith('"') and value.endswith('"')) or \
-       (value.startswith("'") and value.endswith("'")):
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
         return value[1:-1]
     
     # Handle lists
@@ -327,19 +326,20 @@ def convert_value(value: str) -> Any:
         return [v.strip(' "\'') for v in value[1:-1].split(',') if v.strip()]
     
     # Handle other types
-    if value.lower() in ('true', 'yes'):
-        return True
-    elif value.lower() in ('false', 'no'):
-        return False
-    elif value.lower() in ('null', '~', ''):
-        return None
-    elif value.isdigit():
-        return int(value)
-    elif is_float(value):
-        try:
-            return float(value)
-        except ValueError:
-            pass
+    match value.lower():
+        case 'true' | 'yes':
+            return True
+        case 'false' | 'no':
+            return False
+        case 'null' | '~' | '':
+            return None
+        case s if s.isdigit():
+            return int(s)
+        case s if is_float(s):
+            try:
+                return float(s)
+            except ValueError:
+                pass
     
     return value
 
