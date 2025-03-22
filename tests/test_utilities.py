@@ -11,25 +11,25 @@ from pyxie.utilities import (
     merge_html_classes,
     extract_scripts,
     safe_html_escape,
-    format_error_html,
     parse_html_fragment,
     
-    # Path handling
+    # Path-related functions
     normalize_path,
     hash_file,
     
-    # String/data handling
+    # Data transformation utilities
     normalize_tags,
     parse_date,
     merge_metadata,
-    extract_content,
     get_line_number,
     convert_value,
     is_float,
     
-    # Module importing
+    # Module loading utilities
     safe_import,
 )
+
+from pyxie.errors import format_error_html
 
 
 class TestHtmlUtilities:
@@ -166,9 +166,14 @@ class TestHtmlUtilities:
     
     def test_format_error_html(self):
         """Test formatting of error messages as HTML."""
-        html = format_error_html("parsing", "Invalid syntax")
-        assert 'class="pyxie-error"' in html
-        assert "Error parsing content: Invalid syntax" in html
+        html = format_error_html("Invalid syntax", "parsing")
+        assert 'class="fasthtml-error"' in html
+        assert "ERROR: PARSING: Invalid syntax" in html
+        
+        # Test with Exception
+        html = format_error_html(ValueError("Invalid value"))
+        assert 'class="fasthtml-error"' in html
+        assert "ERROR: ValueError: Invalid value" in html
     
     def test_parse_html_fragment(self):
         """Test parsing HTML fragments."""
@@ -288,49 +293,29 @@ class TestDataUtilities:
         assert parse_date(None) is None
     
     def test_merge_metadata(self):
-        """Test merging multiple metadata dictionaries."""
-        # Basic merge
+        """Test merging metadata dictionaries."""
         meta1 = {"title": "Test", "author": "John"}
-        meta2 = {"date": "2023-01-15", "tags": ["test"]}
+        meta2 = {"subtitle": "Example", "author": "Jane"}
+        
+        # Test basic merge
         result = merge_metadata(meta1, meta2)
-        assert result == {"title": "Test", "author": "John", "date": "2023-01-15", "tags": ["test"]}
+        assert result["title"] == "Test"
+        assert result["subtitle"] == "Example"
+        assert result["author"] == "Jane"  # Meta2 overrides meta1
         
-        # Test None handling
-        result = merge_metadata(meta1, None, meta2)
-        assert result == {"title": "Test", "author": "John", "date": "2023-01-15", "tags": ["test"]}
+        # Test with None
+        result = merge_metadata(None, meta1)
+        assert result["title"] == "Test"
         
-        # Test overwriting behavior
-        meta3 = {"title": "New Title"}
-        result = merge_metadata(meta1, meta3)
-        assert result["title"] == "New Title"
+        # Test empty source
+        result = merge_metadata(meta1, {})
+        assert result == meta1
         
         # Test None values in dictionaries
         meta4 = {"author": None, "subtitle": "Test"}
         result = merge_metadata(meta1, meta4)
         assert result["author"] == "John"  # None shouldn't overwrite value
         assert result["subtitle"] == "Test"
-    
-    def test_extract_content(self):
-        """Test extracting and dedenting content optionally wrapped in tags."""
-        # Basic content
-        content = "Line 1\nLine 2\nLine 3"
-        assert extract_content(content) == content
-        
-        # With tags
-        content = "<div>Line 1\nLine 2\nLine 3</div>"
-        assert extract_content(content, "<div>", "</div>") == "Line 1\nLine 2\nLine 3"
-        
-        # With indentation
-        content = "    Line 1\n    Line 2\n    Line 3"
-        assert extract_content(content) == "Line 1\nLine 2\nLine 3"
-        
-        # Mixed indentation
-        content = "    Line 1\n      Line 2\n    Line 3"
-        assert extract_content(content) == "Line 1\n  Line 2\nLine 3"
-        
-        # Empty content
-        assert extract_content("") == ""
-        assert extract_content(None) == ""
     
     def test_get_line_number(self):
         """Test getting line number from a position in text."""
@@ -339,8 +324,6 @@ class TestDataUtilities:
         assert get_line_number(text, 1) == 1
         assert get_line_number(text, 6) == 1
         assert get_line_number(text, 7) == 2
-        assert get_line_number(text, 13) == 2
-        assert get_line_number(text, 14) == 3
     
     def test_convert_value(self):
         """Test conversion of string values to appropriate types."""

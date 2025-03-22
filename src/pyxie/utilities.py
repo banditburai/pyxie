@@ -20,7 +20,7 @@ This module contains general-purpose utilities used across the package.
 import logging
 from typing import Dict, Optional, Any, List, Union, Callable, Tuple, Iterator
 from html import escape
-from datetime import datetime, date
+from datetime import datetime
 from pathlib import Path
 import hashlib
 import importlib.util
@@ -285,28 +285,6 @@ def validate_metadata(metadata: Dict[str, Any]) -> List[str]:
         if not metadata.get(field.name.lower())
     ]
 
-def _calculate_min_indent(lines: List[str]) -> int:
-    """Find minimum indentation level in non-empty lines."""
-    indents = [len(line) - len(line.lstrip()) for line in lines if line.strip()]
-    return min(indents) if indents else 0
-
-def extract_content(content: str, start_tag: Optional[str] = None, end_tag: Optional[str] = None) -> str:
-    """Extract and dedent content, optionally removing wrapping tags."""
-    if not content or not content.strip():
-        return ""
-        
-    # Remove outer tags if present
-    if start_tag and end_tag and content.strip().startswith(start_tag) and content.strip().endswith(end_tag):
-        content = content.strip()[len(start_tag):-len(end_tag)]
-    
-    lines = content.splitlines()
-    if not lines:
-        return ""
-    
-    min_indent = _calculate_min_indent(lines)
-    dedented_lines = [line[min_indent:] if line.strip() else '' for line in lines]
-    return '\n'.join(dedented_lines).strip()
-
 def get_line_number(text: str, position: int) -> int:
     """Get 1-indexed line number for a character position in text."""
     if position <= 0:
@@ -432,10 +410,6 @@ def parse_html_fragment(content_html: str) -> Any:
         return html.fragment_fromstring(content_html)
     except Exception:
         return html.fragment_fromstring(f"<div>{content_html}</div>")
-
-def format_error_html(error_type: str, error_msg: str) -> str:
-    """Format an error message as HTML for display."""
-    return f'<div class="pyxie-error">Error {error_type} content: {error_msg}</div>'
 
 def build_pagination_urls(
     base_url: str,

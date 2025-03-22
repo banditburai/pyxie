@@ -29,7 +29,7 @@ from .errors import (
     ContentError,
     RenderError,
 )
-from .renderer import render_content, render_markdown, render_block, render_blocks
+from .renderer import render_content, render_markdown, render_block
 from .collection import Collection
 
 __version__ = "0.1.2"
@@ -70,7 +70,6 @@ __all__ = [
     "render_content",
     "render_markdown",
     "render_block",
-    "render_blocks",
     
     # Collection
     "Collection",

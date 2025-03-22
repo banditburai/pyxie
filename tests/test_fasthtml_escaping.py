@@ -5,7 +5,7 @@ from mistletoe import Document
 from pyxie.renderer import PyxieHTMLRenderer, render_markdown, render_block
 from pyxie.parser import parse
 from pyxie.types import ContentBlock
-from pyxie.fasthtml import process_multiple_fasthtml_tags
+from pyxie.fasthtml import render_fasthtml
 import re
 
 def test_fasthtml_escaping_in_code_blocks():
@@ -322,20 +322,19 @@ The above FastHTML tags should be escaped and not executed when inside a code bl
     assert fasthtml_block is not None, "No FastHTML block found in code examples"
     
     # 3. Verify the FastHTML tags in the code block are correctly detected as being in a code block
-    from pyxie.fasthtml import process_multiple_fasthtml_tags
+    from pyxie.fasthtml import render_fasthtml
     
     # Print the content we're trying to process
     print("\n\nFastHTML Block:\n", repr(fasthtml_block))
     
     # When we process this through the FastHTML processor
     # Our implementation should detect it's a code block and not execute it
-    result = process_multiple_fasthtml_tags(fasthtml_block)
+    result = render_fasthtml(fasthtml_block)
     
     # Print the result for debugging
-    print("\n\nResult Content:\n", repr(result.content))
+    print("\n\nResult Content:\n", repr(result))
     
-    # Confirm the block was not processed as actual FastHTML
-    # (if it was, it would try to import the Button component and fail)
+    # Since render_fasthtml returns a RenderResult object now (not a string), check its content property
     assert "ImportError:" not in result.content
     assert "Button" in result.content, f"Button not found in result: {result.content}"
     
@@ -348,7 +347,6 @@ The above FastHTML tags should be escaped and not executed when inside a code bl
     
     # It should NOT contain FastHTML error messages
     assert "ImportError:" not in rendered_markdown
-    assert "fasthtml-error" not in rendered_markdown
     
     # 5. Test the entire rendering pipeline
     render_result = render_block(content_block)

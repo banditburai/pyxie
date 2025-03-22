@@ -14,96 +14,28 @@
 
 """Core exceptions for Pyxie."""
 
-from dataclasses import dataclass
-from typing import Any, Generic, Optional, TypeVar
+from typing import Optional, TypeVar, Union
 
 T = TypeVar('T')
 
-@dataclass
-class Result(Generic[T]):
-    """Generic result of an operation which may succeed or fail."""
-    is_success: bool
-    content: T = None
-    error: Optional[Exception] = None
+def format_error_html(error: Union[Exception, str], context: Optional[str] = None) -> str:
+    """Format an error message as HTML for display.
     
-    @classmethod
-    def success(cls, content: T) -> "Result[T]":
-        """Create a successful result with content."""
-        # If content is already a Result, don't wrap it again
-        if isinstance(content, Result):
-            return content
-        return cls(is_success=True, content=content)
-        
-    @classmethod
-    def failure(cls, error: Exception) -> "Result[T]":
-        """Create a failure result with error."""
-        # If error is already a Result in failed state, don't wrap it again
-        if isinstance(error, Result) and not error.is_success:
-            return error
-        return cls(is_success=False, error=error)
+    Args:
+        error: Either an Exception object or an error message string
+        context: Optional context for the error (e.g., 'parsing', 'rendering')
+    """
+    # Format the error message based on type
+    if isinstance(error, Exception):
+        error_message = f"{error.__class__.__name__}: {error}"
+        if isinstance(error, SyntaxError):
+            error_message = f"Syntax error: {error}"
+    else:
+        error_message = str(error)
     
-    def __str__(self) -> str:
-        """String representation of the result."""
-        if self.is_success:
-            return f"Success: {self.content}"
-        return f"Error: {self.error}"
-    
-    def map(self, fn):
-        """Transform the value if successful, preserving the error otherwise.
-        
-        If the function returns a Result, it will be flattened to avoid nested Results.
-        """
-        if not self.is_success:
-            return self
-            
-        try:
-            result = fn(self.content)
-            # If fn returns a Result, flatten it instead of wrapping
-            if isinstance(result, Result):
-                return result
-            return Result.success(result)
-        except Exception as e:
-            # Capture any exceptions from the mapping function
-            return Result.failure(e)
-    
-    def and_then(self, fn):
-        """Chain operations that might fail, passing the value to the next function.
-        
-        The function `fn` must return a Result object.
-        """
-        if not self.is_success:
-            return self
-            
-        try:
-            # fn must return a Result
-            return fn(self.content)
-        except Exception as e:
-            # Capture any exceptions from the chaining function
-            return Result.failure(e)
-    
-    def map_error(self, fn):
-        """Transform the error if failed, preserving the success otherwise.
-        
-        If the function returns a Result, it will be flattened.
-        """
-        if self.is_success:
-            return self
-            
-        try:
-            result = fn(self.error)
-            # If fn returns a Result, use it directly
-            if isinstance(result, Result):
-                return result
-            return Result.failure(result)
-        except Exception as e:
-            # Capture any exceptions from the error mapping function
-            return Result.failure(e)
-
-def format_error_html(error: Exception) -> str:
-    """Format an error message as HTML for display."""
-    error_message = f"{error.__class__.__name__}: {error}"
-    if isinstance(error, SyntaxError):
-        error_message = f"Syntax error: {error}"
+    # Add context if provided
+    if context:
+        error_message = f"{context.upper()}: {error_message}"
     
     # Use a format that test assertions can detect even after HTML escaping
     return f'<div class="fasthtml-error">ERROR: {error_message}</div>'

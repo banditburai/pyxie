@@ -195,14 +195,14 @@ def _validate_inner_tags(block_content: str, content: str, tag_name: str, start_
     
     return True
 
-def _create_content_block(tag_name: str, content: str, params_str: str, index: int) -> ContentBlock:
+def _create_content_block(tag_name: str, content: str, params_str: str, index: int, content_type: str = 'markdown') -> ContentBlock:
     """Create a ContentBlock instance from tag information."""
     params = parse_params(params_str) if params_str else {}
     return ContentBlock(
         name=tag_name,
         content=content,
         params=params,
-        content_type='markdown',
+        content_type=content_type,
         index=index
     )
 
@@ -272,7 +272,7 @@ def _process_tag_match(content: str,
     )
     
     # Special handling for FastHTML tags
-    if tag_name.lower() == 'fasthtml':
+    if tag_name.lower() in FASTHTML_BLOCK_NAMES:
         if is_in_code:
             # This is in a code block - keep as plain text (escape it)
             escaped_content = block_content.replace("<", "&lt;").replace(">", "&gt;")
@@ -300,7 +300,8 @@ def _process_tag_match(content: str,
                 tag_name, 
                 executable_content, 
                 params_str, 
-                0  # Index will be set by the caller
+                0,  # Index will be set by the caller
+                content_type='fasthtml'  # Set content type to fasthtml for execution
             )
     
     # Create content block

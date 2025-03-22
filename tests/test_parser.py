@@ -461,7 +461,7 @@ def test_tags_in_code_blocks():
     print(f"<outer> tag position: {outer_pos}")
     
     # Let's manually try the code_blocks extraction
-    from src.pyxie.parser import find_code_blocks
+    from pyxie.parser import find_code_blocks
     code_blocks = find_code_blocks(content)
     print("\nFound code blocks:")
     for i, (start, end) in enumerate(code_blocks):

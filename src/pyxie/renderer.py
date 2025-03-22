@@ -26,23 +26,13 @@ from lxml import html
 
 from .types import ContentBlock, ContentItem
 from .layouts import get_layout
-from .fasthtml import (
-    is_fasthtml_content, 
-    EXECUTABLE_MARKER, is_executable_fasthtml,
-    process_single_fasthtml_block
-)
-from .utilities import log, format_error_html
+from .fasthtml import render_fasthtml, RenderResult, EXECUTABLE_MARKER, is_executable_fasthtml
+from .errors import format_error_html
+from .utilities import log
 
 logger = logging.getLogger(__name__)
 PYXIE_SHOW_ATTR = "data-pyxie-show"  # Visibility control attribute
 SELF_CLOSING_TAGS = frozenset({'br', 'img', 'input', 'hr', 'meta', 'link'})
-
-class RenderResult(NamedTuple):
-    """Result from a rendering operation."""
-    content: Optional[str] = None
-    error: Optional[str] = None
-    @property
-    def success(self) -> bool: return self.error is None and self.content is not None
 
 class CacheProtocol(Protocol):
     """Protocol for cache objects."""
@@ -138,38 +128,18 @@ def render_block(block: ContentBlock, cache: Optional[CacheProtocol] = None) -> 
         
         content = block.content
         
-        # Debug log for investigation
-        log(logger, "Renderer", "debug", "fasthtml", 
-            f"Block: {block.name}, Type: {block.content_type}, " 
-            f"Is executable: {is_executable_fasthtml(content)}, "
-            f"Is fasthtml: {is_fasthtml_content(content)}")
-            
-        # Process executable FastHTML content - THIS MUST BE CHECKED FIRST
+        # Check for executable FastHTML marker first - highest priority
         if is_executable_fasthtml(content):
-            log(logger, "Renderer", "debug", "fasthtml", f"Processing executable FastHTML in block {block.name}")
-            # Use process_single_fasthtml_block which handles executable content correctly
-            result = process_single_fasthtml_block(content)
-            if result.is_success:
-                return RenderResult(content=result.content)
-            else:
-                return RenderResult(error=str(result.error))
-
-        # Handle regular FastHTML content (non-executable)
-        if is_fasthtml_content(content):
-            log(logger, "Renderer", "info", "fasthtml", f"Detected non-executable FastHTML content in block {block.name}, rendering as markdown")
-        
-        # Render all other content as markdown
+            log(logger, "Renderer", "info", "fasthtml", 
+                f"Processing block {block.name} with executable marker")
+            return render_fasthtml(content)
+                      
+        # Default case - render as markdown
         return RenderResult(content=render_markdown(content))
+    
     except Exception as e:
         log(logger, "Renderer", "error", "block", f"Failed to render block {block.name}: {e}")
-        return RenderResult(content=format_error_html("block", str(e)))
-
-def render_blocks(blocks: Dict[str, List[ContentBlock]]) -> Dict[str, List[str]]:
-    """Render multiple content blocks to HTML."""
-    return {name: [
-        result.content if result.success else format_error_html("block", result.error)
-        for block in block_list for result in [render_block(block)]
-    ] for name, block_list in blocks.items()}
+        return RenderResult(error=f"{e.__class__.__name__}: {e}")
 
 def extract_slots_with_content(rendered_blocks: Dict[str, List[str]]) -> Set[str]:
     """Extract slot names that have content."""

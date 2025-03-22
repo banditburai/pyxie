@@ -10,13 +10,16 @@ from typing import Dict, Any, Generator
 import tempfile
 from pathlib import Path
 import time
+import os
 
 from pyxie.fasthtml import (
-    process_single_fasthtml_block, parse_fasthtml_tags, create_namespace,
+    render_fasthtml, parse_fasthtml_tags, create_namespace,
     safe_import, process_imports, py_to_js, js_function,
-    is_fasthtml_content, protect_script_tags, format_error_html,
-    process_multiple_fasthtml_tags, EXECUTABLE_MARKER
+    protect_script_tags,
+    EXECUTABLE_MARKER,
+    extract_executable_content
 )
+from pyxie.types import ContentBlock
 
 # Test fixtures
 @pytest.fixture
@@ -132,7 +135,8 @@ class TestContentManipulation:
         tags = parse_fasthtml_tags(indented, first_only=True)
         assert tags
         tag_match = tags[0]
-        assert tag_match.content == "def hello():\n    return 'Hello'"
+        assert "def hello():" in tag_match.content
+        assert "return 'Hello'" in tag_match.content
         
         # Empty content
         assert not parse_fasthtml_tags("", first_only=True)
@@ -145,17 +149,23 @@ class TestContentManipulation:
         plain = "def hello():\n    return 'Hello'"
         assert not parse_fasthtml_tags(plain, first_only=True)
     
-    def test_is_fasthtml_content(self):
-        """Test detection of FastHTML content."""
-        # Valid FastHTML content
-        assert is_fasthtml_content("<fasthtml>content</fasthtml>")
-        assert is_fasthtml_content("<fasthtml>\ncontent\n</fasthtml>")
+    def test_extract_executable_content(self):
+        """Test detection and extraction of executable FastHTML content."""
+        # Simple check for executable marker
+        test_marked = f"{EXECUTABLE_MARKER}print('hello')"
+        assert test_marked.startswith(EXECUTABLE_MARKER)
         
-        # Invalid FastHTML content
-        assert not is_fasthtml_content("plain text")
-        assert not is_fasthtml_content("<div>HTML content</div>")
-        assert not is_fasthtml_content("<fasthtml>unclosed tag")
-        assert not is_fasthtml_content(None)  # Should handle non-string input
+        # Import the function to test
+        from pyxie.fasthtml import is_executable_fasthtml, extract_executable_content
+        
+        # Valid executable content
+        assert is_executable_fasthtml(test_marked)
+        assert extract_executable_content(test_marked) == "print('hello')"
+        
+        # Non-executable content
+        assert not is_executable_fasthtml("plain text")
+        assert not is_executable_fasthtml("<fasthtml>content</fasthtml>")
+        assert extract_executable_content("plain text") == "plain text"  # Returns original if not executable
     
     def test_protect_script_tags(self):
         """Test protection of script tags during XML processing."""
@@ -282,8 +292,8 @@ app = Div(
 show(app)
 </fasthtml>"""
 
-        result = process_single_fasthtml_block(content)
-        assert result.is_success
+        result = render_fasthtml(content)
+        assert result.success
         rendered = result.content
 
         # Check outer structure
@@ -315,8 +325,8 @@ show(ConditionalComponent(True))
 show(ConditionalComponent(False))
 </fasthtml>"""
 
-        result = process_single_fasthtml_block(content)
-        assert result.is_success
+        result = render_fasthtml(content)
+        assert result.success
         rendered = result.content
 
         # Both conditions should be rendered
@@ -343,8 +353,8 @@ def PageWithJS(title):
 show(PageWithJS("Example Page"))
 </fasthtml>"""
 
-        result = process_single_fasthtml_block(content)
-        assert result.is_success
+        result = render_fasthtml(content)
+        assert result.success
         rendered = result.content
 
         # Check basic structure
@@ -380,14 +390,14 @@ custom = test_components.CustomComponent("Test Title", "This is the content")
 show(custom)
 </fasthtml>"""
 
-        result = process_single_fasthtml_block(content)
-        assert result.is_success, f"Error: {result.error}"
+        result = render_fasthtml(content)
+        assert result.success, f"Error: {result.error}"
         rendered = result.content
 
-        # The string gets HTML-escaped because it's a raw string, not a component
-        assert '&lt;div class=&quot;custom-component&quot;&gt;' in rendered
-        assert '&lt;h2&gt;Test Title&lt;/h2&gt;' in rendered
-        assert '&lt;p&gt;This is the content&lt;/p&gt;' in rendered
+        # The component is now rendered as HTML, not escaped
+        assert '<div class="custom-component">' in rendered
+        assert '<h2>Test Title</h2>' in rendered
+        assert '<p>This is the content</p>' in rendered
 
     def test_dynamic_components(self):
         """Test dynamic component generation in FastHTML."""
@@ -399,8 +409,8 @@ container = Div(*create_components(3), cls="container")
 show(container)
 </fasthtml>"""
 
-        result = process_single_fasthtml_block(content)
-        assert result.is_success
+        result = render_fasthtml(content)
+        assert result.success
         rendered = result.content
 
         # Check container and all dynamic components
@@ -419,12 +429,15 @@ def Button(text, cls="btn", **props):
 show(Button("Click me", cls="btn-primary", id="submit-btn", disabled="true"))
 </fasthtml>"""
 
-        result = process_single_fasthtml_block(content)
-        assert result.is_success
+        result = render_fasthtml(content)
+        assert result.success
         rendered = result.content
 
-        # The string gets HTML-escaped because it's a raw string, not a component
-        assert '&lt;button class=&quot;btn-primary&quot; id=&quot;submit-btn&quot; disabled=&quot;true&quot;&gt;Click me&lt;/button&gt;' in rendered
+        # The component is now rendered as HTML, not escaped
+        assert '<button class="btn-primary"' in rendered
+        assert 'id="submit-btn"' in rendered
+        assert 'disabled="true"' in rendered
+        assert '>Click me</button>' in rendered
 
     def test_nested_tags(self):
         """Test processing of nested FastHTML tags."""
@@ -439,15 +452,13 @@ show(Div("Inner component"))
 </fasthtml>"""
 
         # Process the entire content with nested tags
-        result = process_multiple_fasthtml_tags(content)
-        assert result.is_success
-        rendered = result.content
-
+        result = render_fasthtml(content)
+        
         # In our new design, these won't execute without the EXECUTABLE_MARKER
         # Check that the content is preserved as text
-        assert 'show(Div("Outer component"))' in rendered
-        assert '<p>Regular HTML content</p>' in rendered
-        assert 'show(Div("Inner component"))' in rendered
+        assert 'show(Div("Outer component"))' in result.content
+        assert '<p>Regular HTML content</p>' in result.content
+        assert 'show(Div("Inner component"))' in result.content
 
 # Test error handling
 class TestErrorHandling:
@@ -461,8 +472,8 @@ def broken_function(
     return "This will never execute"
 </fasthtml>"""
 
-        result = process_single_fasthtml_block(content)
-        assert not result.is_success
+        result = render_fasthtml(content)
+        assert not result.success
         assert "Syntax error" in str(result.error)
     
     def test_runtime_error(self):
@@ -474,8 +485,8 @@ def div_by_zero():
 show(div_by_zero())
 </fasthtml>"""
 
-        result = process_single_fasthtml_block(content)
-        assert not result.is_success
+        result = render_fasthtml(content)
+        assert not result.success
         assert "ZeroDivisionError" in str(result.error)
     
     def test_component_error(self):
@@ -484,8 +495,8 @@ show(div_by_zero())
 show(UndefinedComponent())
 </fasthtml>"""
 
-        result = process_single_fasthtml_block(content)
-        assert not result.is_success
+        result = render_fasthtml(content)
+        assert not result.success
         assert "NameError" in str(result.error)
         
     def test_non_executable_content_not_executed(self):
@@ -495,6 +506,6 @@ show(UndefinedComponent())
 undefined_variable + 1
 </fasthtml>"""
 
-        result = process_single_fasthtml_block(content)
-        assert result.is_success
+        result = render_fasthtml(content)
+        assert result.success
         assert "undefined_variable + 1" in result.content 

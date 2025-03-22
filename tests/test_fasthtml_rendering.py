@@ -7,7 +7,7 @@ especially for complex nested component structures.
 
 import logging
 
-from pyxie.fasthtml import process_single_fasthtml_block, EXECUTABLE_MARKER
+from pyxie.fasthtml import render_fasthtml, EXECUTABLE_MARKER, RenderResult
 import fasthtml.common as ft_common
 from pyxie.parser import find_content_blocks, find_code_blocks
 from pyxie.renderer import render_block
@@ -27,8 +27,9 @@ def test_simple_component():
     content = EXECUTABLE_MARKER + """<fasthtml>
 show(Div("Hello World", cls="test-class"))
 </fasthtml>"""
-    result = process_single_fasthtml_block(content)
-    assert result.is_success
+    result = render_fasthtml(content)
+    assert hasattr(result, 'success'), "Result object doesn't have a success attribute"
+    assert result.success
     assert "<div class=\"test-class\">Hello World</div>" in result.content
 
 
@@ -41,8 +42,9 @@ component = Div(
 )
 show(component)
 </fasthtml>"""
-    result = process_single_fasthtml_block(content)
-    assert result.is_success
+    result = render_fasthtml(content)
+    assert hasattr(result, 'success'), "Result object doesn't have a success attribute"
+    assert result.success
     assert "<div class=\"outer\">" in result.content
     assert "<div class=\"inner\">Inner content</div>" in result.content
 
@@ -55,8 +57,9 @@ def MyComponent(text):
     
 show(MyComponent("Hello from function"))
 </fasthtml>"""
-    result = process_single_fasthtml_block(content)
-    assert result.is_success
+    result = render_fasthtml(content)
+    assert hasattr(result, 'success'), "Result object doesn't have a success attribute"
+    assert result.success
     assert "<div class=\"custom\">Hello from function</div>" in result.content
 
 
@@ -69,8 +72,9 @@ component = Div(
 )
 show(component)
 </fasthtml>"""
-    result = process_single_fasthtml_block(content)
-    assert result.is_success
+    result = render_fasthtml(content)
+    assert hasattr(result, 'success'), "Result object doesn't have a success attribute"
+    assert result.success
     assert "<div class=\"list-container\">" in result.content
     assert "<p class=\"item-0\">Item 0</p>" in result.content
     assert "<p class=\"item-1\">Item 1</p>" in result.content
@@ -94,8 +98,9 @@ gallery = Div(
 )
 show(gallery)
 </fasthtml>"""
-    result = process_single_fasthtml_block(content)
-    assert result.is_success
+    result = render_fasthtml(content)
+    assert hasattr(result, 'success'), "Result object doesn't have a success attribute"
+    assert result.success
     assert "<div class=\"gallery\">" in result.content
     assert "<div class=\"card-style\">" in result.content
     assert "<img src=\"image1.jpg\" alt=\"Image 1\" class=\"img-style\">" in result.content
@@ -129,8 +134,9 @@ data = [
 
 show(BarChart(data))
 </fasthtml>"""
-    result = process_single_fasthtml_block(content)
-    assert result.is_success
+    result = render_fasthtml(content)
+    assert hasattr(result, 'success'), "Result object doesn't have a success attribute"
+    assert result.success
     assert "<div class=\"chart\">" in result.content
     assert "<div class=\"bar-container\">" in result.content
     assert "<div class=\"bar\" style=\"width: 50.0%\"></div>" in result.content
@@ -145,10 +151,11 @@ show(Button("Click me", cls="test-button"))
 </fasthtml>"""
     
     # Render the block
-    result = process_single_fasthtml_block(test_content)
+    result = render_fasthtml(test_content)
     
     # The rendered content should be successful
-    assert result.is_success, f"Rendering failed: {result.error}"
+    assert hasattr(result, 'success'), "Result object doesn't have a success attribute"
+    assert result.success, f"Rendering failed: {result.error}"
     
     # The rendered content should contain the button but not the show() function call
     assert 'class="test-button"' in result.content, "Button not rendered"
@@ -292,7 +299,7 @@ show(Div("This is test content", cls="test-type-div"))
 
 def test_problematic_fasthtml_formats():
     """Test handling of problematic FastHTML formats that might occur in real-world usage."""
-    from pyxie.fasthtml import process_single_fasthtml_block, EXECUTABLE_MARKER
+    from pyxie.fasthtml import render_fasthtml, EXECUTABLE_MARKER
     
     # Test case 1: Content with the marker but without proper <fasthtml> tags
     # This simulates a case where the parser added the marker but tags were altered
@@ -300,8 +307,9 @@ def test_problematic_fasthtml_formats():
 show(Div("This should still execute even without proper tags", cls="test-problematic"))
 """
     
-    result1 = process_single_fasthtml_block(content1)
-    assert result1.is_success, f"Failed to process content without tags: {result1.error}"
+    result1 = render_fasthtml(content1)
+    assert hasattr(result1, 'success'), "Result object doesn't have a success attribute"
+    assert result1.success, f"Failed to process content without tags: {result1.error}"
     assert '<div class="test-problematic">' in result1.content, "Component not rendered correctly"
     
     # Test case 2: Content with the marker and malformed tags
@@ -309,8 +317,9 @@ show(Div("This should still execute even without proper tags", cls="test-problem
 show(Div("This has malformed tags", cls="test-malformed"))
 </Fasthtml>"""  # Note the capitalization mismatch
     
-    result2 = process_single_fasthtml_block(content2)
-    assert result2.is_success, f"Failed to process content with malformed tags: {result2.error}"
+    result2 = render_fasthtml(content2)
+    assert hasattr(result2, 'success'), "Result object doesn't have a success attribute"
+    assert result2.success, f"Failed to process content with malformed tags: {result2.error}"
     assert '<div class="test-malformed">' in result2.content, "Component not rendered with malformed tags"
     
     # Test case 3: Content with extra text outside the tags
@@ -320,8 +329,9 @@ show(Div("This has text outside tags", cls="test-outside"))
 </fasthtml>
 Some text after"""
     
-    result3 = process_single_fasthtml_block(content3)
-    assert result3.is_success, f"Failed to process content with text outside tags: {result3.error}"
+    result3 = render_fasthtml(content3)
+    assert hasattr(result3, 'success'), "Result object doesn't have a success attribute"
+    assert result3.success, f"Failed to process content with text outside tags: {result3.error}"
     assert '<div class="test-outside">' in result3.content, "Component not rendered with outside text"
 
 

@@ -11,7 +11,7 @@ from pyxie.renderer import render_block, render_content
 from pyxie.parser import ContentBlock
 from pyxie.layouts import layout
 from pyxie.pyxie import Pyxie
-from pyxie.fasthtml import process_multiple_fasthtml_tags, render_fasthtml, process_single_fasthtml_block
+from pyxie.fasthtml import render_fasthtml
 
 T = TypeVar('T', bound=FT)
 
@@ -174,7 +174,8 @@ status: published
         pyxie._load_collection(pyxie._collections["test"])
         item, _ = pyxie.get_item("test", collection="test")
         result = render_content(item)
-        assert "Error rendering content" in result
+        assert '<div class="fasthtml-error">' in result
+        assert "LAYOUT 'NONEXISTENT' NOT FOUND" in result.upper()
     
     elif error_case == "malformed_html":
         block = ContentBlock(name="content", content="<unclosed>test", params={})
@@ -225,11 +226,11 @@ show(Greeting("World"))
 </fasthtml>"""
     
     result = render_fasthtml(content)
-    assert "<div class=\"greeting\">Hello, World!</div>" in result
+    assert "<div class=\"greeting\">Hello, World!</div>" in result.content
 
 def test_fasthtml_in_content_block():
     """Test that FastHTML blocks in content are properly executed and rendered."""
-    from pyxie.fasthtml import process_single_fasthtml_block, EXECUTABLE_MARKER
+    from pyxie.fasthtml import render_fasthtml, EXECUTABLE_MARKER
     import fasthtml.common as ft_common
 
     # Import components for the test to work with ft_common namespace
@@ -243,8 +244,8 @@ def test_fasthtml_in_content_block():
 show(Div("Hello World", cls="test-class"))
 </fasthtml>"""
     
-    result = process_single_fasthtml_block(content)
-    assert result.is_success
+    result = render_fasthtml(content)
+    assert result.success
     assert "<div class=\"test-class\">Hello World</div>" in result.content
 
 def test_render_block_with_fasthtml():
@@ -360,8 +361,11 @@ def test_handle_slot_filling_errors() -> None:
     mock_item.metadata = {"layout": "test"}
     mock_item.blocks = {"content": [ContentBlock(name="content", content="<p>Test</p>", params={}, content_type="md")]}
 
-    # Mock fill_slots to return an error
-    with mock.patch('pyxie.slots.fill_slots') as mock_fill_slots:
+    # Mock handle_cache_and_layout and fill_slots
+    with mock.patch('pyxie.renderer.handle_cache_and_layout', 
+                   return_value=(None, "<div>{{content}}</div>", None)), \
+         mock.patch('pyxie.slots.fill_slots') as mock_fill_slots:
+        
         mock_result = SlotFillResult(
             was_filled=False,
             element="<div>Error</div>",
@@ -373,4 +377,5 @@ def test_handle_slot_filling_errors() -> None:
         result = render_content(mock_item)
 
         # Check that the error was handled
-        assert "Test error" in result 
+        assert '<div class="fasthtml-error">' in result
+        assert "TEST ERROR" in result.upper() 
