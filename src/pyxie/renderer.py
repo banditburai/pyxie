@@ -26,7 +26,7 @@ from lxml import html
 
 from .types import ContentBlock, ContentItem
 from .layouts import get_layout
-from .fasthtml import process_fasthtml_in_content, is_fasthtml_content
+from .fasthtml import process_multiple_fasthtml_tags, is_fasthtml_content
 from .utilities import log, format_error_html
 
 logger = logging.getLogger(__name__)
@@ -73,28 +73,6 @@ class PyxieHTMLRenderer(HTMLRenderer):
         """Render heading with automatic ID generation."""
         inner = self.render_inner(token)
         return f'<h{token.level} id="{self._make_id(inner)}">{inner}</h{token.level}>'
-    
-    def render_code_block(self, token):
-        """Override code block rendering to ensure FastHTML tags are escaped."""
-        # Escape any FastHTML tags in the code
-        content = token.children[0].content
-        # Escape tags like <fasthtml> and </fasthtml>
-        content = re.sub(r'<(/?)(fasthtml|ft)(\s|>)', r'&lt;\1\2\3', content)
-        # Also escape self-closing tags like <fasthtml/>
-        content = re.sub(r'<(fasthtml|ft)(\s[^>]*)?/>', r'&lt;\1\2/&gt;', content)
-        
-        if token.language:
-            return f'<pre><code class="language-{token.language}">{content}</code></pre>'
-        return f'<pre><code>{content}</code></pre>'
-    
-    def render_inline_code(self, token):
-        """Override inline code rendering to ensure FastHTML tags are escaped."""
-        # Escape any FastHTML tags in the inline code
-        content = escape(token.children[0].content)
-        # Double-check FastHTML tags are escaped
-        content = re.sub(r'<(/?)(fasthtml|ft)(\s|>)', r'&lt;\1\2\3', content)
-        content = re.sub(r'<(fasthtml|ft)(\s[^>]*)?/>', r'&lt;\1\2/&gt;', content)
-        return f'<code>{content}</code>'
         
     def render_image(self, token) -> str:
         """Custom image rendering with placeholder support."""
@@ -140,14 +118,6 @@ def render_markdown(content: str) -> str:
     # Convert markdown to HTML
     return PyxieHTMLRenderer().render(Document(content))
 
-def process_fasthtml(content: str) -> RenderResult:
-    """Process FastHTML blocks in content."""
-    try:
-        return RenderResult(content=process_fasthtml_in_content(content))
-    except Exception as e:
-        log(logger, "Renderer", "error", "fasthtml", f"Failed to process FastHTML: {e}")
-        return RenderResult(error=str(e))
-
 def render_block(block: ContentBlock, cache: Optional[CacheProtocol] = None) -> RenderResult:
     """Render a content block to HTML."""
     try:
@@ -166,7 +136,10 @@ def render_block(block: ContentBlock, cache: Optional[CacheProtocol] = None) -> 
         
         # Process FastHTML content
         if is_fasthtml_content(block.content):
-            return RenderResult(content=process_fasthtml_in_content(block.content))
+            return RenderResult(content=process_multiple_fasthtml_tags(
+                block.content, 
+                is_escaped=block.is_escaped
+            ))
             
         # Render markdown content
         return RenderResult(content=render_markdown(block.content))

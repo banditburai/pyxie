@@ -9,11 +9,13 @@ import pytest
 from typing import Dict, Any, Generator
 import tempfile
 from pathlib import Path
+import time
 
 from pyxie.fasthtml import (
-    render_fasthtml_block, parse_fasthtml_tag, create_namespace,
+    process_single_fasthtml_block, parse_fasthtml_tags, create_namespace,
     safe_import, process_imports, py_to_js, js_function,
-    is_fasthtml_content, protect_script_tags
+    is_fasthtml_content, protect_script_tags, format_error_html,
+    process_multiple_fasthtml_tags
 )
 
 # Test fixtures
@@ -117,8 +119,9 @@ class TestContentManipulation:
         """Test extraction of inner content from FastHTML blocks."""
         # Basic extraction
         content = "<fasthtml>\ndef hello():\n    return 'Hello'\n</fasthtml>"
-        tag_match = parse_fasthtml_tag(content)
-        assert tag_match is not None
+        tags = parse_fasthtml_tags(content, first_only=True)
+        assert tags
+        tag_match = tags[0]
         assert tag_match.content == "def hello():\n    return 'Hello'"
         
         # Handling indentation
@@ -126,19 +129,21 @@ class TestContentManipulation:
             def hello():
                 return 'Hello'
         </fasthtml>"""
-        tag_match = parse_fasthtml_tag(indented)
-        assert tag_match is not None
+        tags = parse_fasthtml_tags(indented, first_only=True)
+        assert tags
+        tag_match = tags[0]
         assert tag_match.content == "def hello():\n    return 'Hello'"
         
         # Empty content
-        assert parse_fasthtml_tag("") is None
-        empty_tag = parse_fasthtml_tag("<fasthtml></fasthtml>")
-        assert empty_tag is not None
+        assert not parse_fasthtml_tags("", first_only=True)
+        empty_tags = parse_fasthtml_tags("<fasthtml></fasthtml>", first_only=True)
+        assert empty_tags
+        empty_tag = empty_tags[0]
         assert empty_tag.content == ""
         
         # Non-FastHTML content
         plain = "def hello():\n    return 'Hello'"
-        assert parse_fasthtml_tag(plain) is None
+        assert not parse_fasthtml_tags(plain, first_only=True)
     
     def test_is_fasthtml_content(self):
         """Test detection of FastHTML content."""
@@ -277,22 +282,24 @@ app = Div(
 show(app)
 </fasthtml>"""
 
-        result = render_fasthtml_block(content)
+        result = process_single_fasthtml_block(content)
+        assert result.is_success
+        rendered = result.content
         
         # Check outer structure
-        assert '<div class="app-container">' in result
-        assert '<div class="card">' in result
+        assert '<div class="app-container">' in rendered
+        assert '<div class="card">' in rendered
         
         # Check nested components
-        assert '<div class="card-title">Complex Component</div>' in result
-        assert '<div class="items-list">' in result
-        assert '<div class="list-item item-0">1. Item 0</div>' in result
-        assert '<div class="list-item item-1">2. Item 1</div>' in result
-        assert '<div class="list-item item-2">3. Item 2</div>' in result
+        assert '<div class="card-title">Complex Component</div>' in rendered
+        assert '<div class="items-list">' in rendered
+        assert '<div class="list-item item-0">1. Item 0</div>' in rendered
+        assert '<div class="list-item item-1">2. Item 1</div>' in rendered
+        assert '<div class="list-item item-2">3. Item 2</div>' in rendered
         
         # Check footer - allow for slight variations in structure
-        assert '<div class="card-footer">' in result
-        assert '<div class="footer-content">Card Footer</div>' in result
+        assert '<div class="card-footer">' in rendered
+        assert '<div class="footer-content">Card Footer</div>' in rendered
     
     def test_conditional_rendering(self):
         """Test conditional rendering in FastHTML components."""
@@ -307,92 +314,161 @@ show(ConditionalComponent(True))
 show(ConditionalComponent(False))
 </fasthtml>"""
 
-        result = render_fasthtml_block(content)
-        
+        result = process_single_fasthtml_block(content)
+        assert result.is_success
+        rendered = result.content
+
         # Both conditions should be rendered
-        assert '<div class="true-condition">Condition is True</div>' in result
-        assert '<div class="false-condition">Condition is False</div>' in result
+        assert '<div class="true-condition">Condition is True</div>' in rendered
+        assert '<div class="false-condition">Condition is False</div>' in rendered
     
     def test_component_with_javascript(self):
-        """Test component with JavaScript event handlers."""
+        """Test components with JavaScript in FastHTML."""
         content = """<fasthtml>
-from pyxie.fasthtml import js_function
+def PageWithJS(title):
+    return Div(
+        Div(title, cls="title"),
+        Div(
+            Div("Page content goes here", cls="content"),
+            Div(
+                Script("document.addEventListener('DOMContentLoaded', function() { console.log('Page loaded!'); });"),
+                cls="scripts"
+            ),
+            cls="body"
+        ),
+        cls="page"
+    )
 
-button = Button(
-    "Click Me",
-    onclick=js_function("function() { alert('Button clicked!'); }"),
-    cls="action-button"
-)
-
-show(button)
+show(PageWithJS("Example Page"))
 </fasthtml>"""
 
-        result = render_fasthtml_block(content)
+        result = process_single_fasthtml_block(content)
+        assert result.is_success
+        rendered = result.content
         
-        # Check that button and JavaScript are rendered
-        assert '<button' in result
-        assert 'class="action-button"' in result
-        assert 'Click Me</button>' in result
-        assert 'onclick="__FUNCTION__function() { alert(' in result
+        # Check basic structure
+        assert '<div class="page">' in rendered
+        assert '<div class="title">Example Page</div>' in rendered
+        assert '<div class="body">' in rendered
+        assert '<div class="content">Page content goes here</div>' in rendered
+        
+        # Check that JavaScript is properly included
+        assert '<script data-raw="true">' in rendered
+        assert "document.addEventListener('DOMContentLoaded'" in rendered
     
     def test_external_module_component(self, test_module_dir: Path):
-        """Test component that imports from external module."""
-        # Create a test component module
-        component_file = test_module_dir / "components.py"
-        component_file.write_text("""
-from fasthtml.common import Div, P
-
-def Header(title, subtitle=None):
-    components = [Div(title, cls="header-title")]
-    if subtitle:
-        components.append(Div(subtitle, cls="header-subtitle"))
-    return Div(*components, cls="header")
+        """Test importing and using components from external modules."""
+        # Create a test module
+        module_path = test_module_dir / "test_components.py"
+        with open(module_path, 'w') as f:
+            f.write("""
+def CustomComponent(title, content):
+    return f'<div class="custom-component"><h2>{title}</h2><p>{content}</p></div>'
 """)
         
-        content = f"""<fasthtml>
+        # Allow time for the file to be saved
+        time.sleep(0.1)
+        
+        content = """<fasthtml>
 import sys
-sys.path.append("{str(test_module_dir)}")
-from components import Header
+sys.path.insert(0, r'""" + str(test_module_dir) + """')
 
-page = Div(
-    Header("Page Title", "Subtitle text"),
-    P("Page content goes here"),
-    cls="page"
-)
-
-show(page)
+import test_components
+custom = test_components.CustomComponent("Test Title", "This is the content")
+show(custom)
 </fasthtml>"""
 
-        result = render_fasthtml_block(content, context_path=test_module_dir)
+        result = process_single_fasthtml_block(content)
+        assert result.is_success, f"Error: {result.error}"
+        rendered = result.content
         
-        # Check component rendering
-        assert '<div class="page">' in result
-        assert '<div class="header">' in result
-        assert '<div class="header-title">Page Title</div>' in result
-        assert '<div class="header-subtitle">Subtitle text</div>' in result
-        assert '<p>Page content goes here</p>' in result
+        # The string gets HTML-escaped because it's a raw string, not a component
+        # So we should check for the escaped version
+        assert '&lt;div class=&quot;custom-component&quot;&gt;' in rendered
+        assert '&lt;h2&gt;Test Title&lt;/h2&gt;' in rendered
+        assert '&lt;p&gt;This is the content&lt;/p&gt;' in rendered
+
+    def test_dynamic_components(self):
+        """Test dynamic component generation in FastHTML."""
+        content = """<fasthtml>
+def create_components(count):
+    return [Div(f"Component {i}", cls=f"component-{i}") for i in range(count)]
+
+container = Div(*create_components(3), cls="container")
+show(container)
+</fasthtml>"""
+
+        result = process_single_fasthtml_block(content)
+        assert result.is_success
+        rendered = result.content
+
+        # Check container and all dynamic components
+        assert '<div class="container">' in rendered
+        assert '<div class="component-0">Component 0</div>' in rendered
+        assert '<div class="component-1">Component 1</div>' in rendered
+        assert '<div class="component-2">Component 2</div>' in rendered
+
+    def test_component_with_props(self):
+        """Test component with props in FastHTML."""
+        content = """<fasthtml>
+def Button(text, cls="btn", **props):
+    props_str = ' '.join([f'{k}="{v}"' for k, v in props.items()])
+    return f'<button class="{cls}" {props_str}>{text}</button>'
+
+show(Button("Click me", cls="btn-primary", id="submit-btn", disabled="true"))
+</fasthtml>"""
+
+        result = process_single_fasthtml_block(content)
+        assert result.is_success
+        rendered = result.content
+
+        # The string gets HTML-escaped because it's a raw string, not a component
+        assert '&lt;button class=&quot;btn-primary&quot; id=&quot;submit-btn&quot; disabled=&quot;true&quot;&gt;Click me&lt;/button&gt;' in rendered
+
+    def test_nested_tags(self):
+        """Test processing of nested FastHTML tags."""
+        content = """<fasthtml>
+show(Div("Outer component"))
+</fasthtml>
+
+<p>Regular HTML content</p>
+
+<fasthtml>
+show(Div("Inner component"))
+</fasthtml>"""
+
+        # Process the entire content with nested tags
+        result = process_multiple_fasthtml_tags(content)
+        assert result.is_success
+        rendered = result.content
+        
+        # Check that both components and the HTML are rendered correctly
+        assert '<div>Outer component</div>' in rendered
+        assert '<p>Regular HTML content</p>' in rendered
+        assert '<div>Inner component</div>' in rendered
 
 # Test error handling
 class TestErrorHandling:
     """Test error handling in FastHTML processing."""
     
     def test_syntax_error(self):
-        """Test handling of syntax errors in FastHTML code."""
+        """Test that syntax errors are caught and reported properly."""
         content = """<fasthtml>
 def broken_function(
     # Missing closing parenthesis
-    return "This will cause a syntax error"
+    return "This will never execute"
 </fasthtml>"""
 
-        # Should not raise an exception but return error information
-        result = render_fasthtml_block(content)
+        result = process_single_fasthtml_block(content)
+        assert not result.is_success
+        error_message = format_error_html(result.error)
         
-        # Result should contain error information
-        assert "Error:" in result
-        assert "was never closed" in result
+        # Check for error indicators in the output
+        assert "Syntax" in error_message
+        assert "never closed" in error_message
     
     def test_runtime_error(self):
-        """Test handling of runtime errors in FastHTML code."""
+        """Test that runtime errors are caught and reported properly."""
         content = """<fasthtml>
 def div_by_zero():
     return 1 / 0
@@ -400,23 +476,24 @@ def div_by_zero():
 show(div_by_zero())
 </fasthtml>"""
 
-        # Should not raise an exception but return error information
-        result = render_fasthtml_block(content)
+        result = process_single_fasthtml_block(content)
+        assert not result.is_success
+        error_message = format_error_html(result.error)
         
-        # Result should contain error information
-        assert "Error:" in result
-        assert "division by zero" in result
+        # Check for error indicators in the output
+        assert "ZeroDivision" in error_message
+        assert "division by zero" in error_message
     
     def test_component_error(self):
-        """Test handling of errors in component rendering."""
+        """Test that component errors are caught and reported properly."""
         content = """<fasthtml>
-# Using undefined component
-show(UndefinedComponent("This will fail"))
+show(UndefinedComponent())
 </fasthtml>"""
 
-        # Should not raise an exception but return error information
-        result = render_fasthtml_block(content)
+        result = process_single_fasthtml_block(content)
+        assert not result.is_success
+        error_message = format_error_html(result.error)
         
-        # Result should contain error information
-        assert "Error:" in result
-        assert "UndefinedComponent" in result 
+        # Check for error indicators in the output
+        assert "NameError" in error_message
+        assert "UndefinedComponent" in error_message 

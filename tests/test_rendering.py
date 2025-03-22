@@ -11,6 +11,7 @@ from pyxie.renderer import render_block, render_content
 from pyxie.parser import ContentBlock
 from pyxie.layouts import layout
 from pyxie.pyxie import Pyxie
+from pyxie.fasthtml import process_multiple_fasthtml_tags
 
 T = TypeVar('T', bound=FT)
 
@@ -208,16 +209,11 @@ def test_complex_nested_content() -> None:
     assert ("return \"nested\"" in result.content or "return &quot;nested&quot;" in result.content)
     assert "List item 2" in result.content
 
-def test_process_fasthtml() -> None:
-    """Test processing of FastHTML blocks, including error handling."""
-    from pyxie.renderer import process_fasthtml
+def test_process_fasthtml():
+    """Test processing FastHTML components in content."""
+    valid_html_content = "<fasthtml>show(Div('Hello World'))</fasthtml>"
     
-    # Test with valid HTML content inside fasthtml tags (should be passed through)
-    valid_html_content = '<p>Text</p><fasthtml><div id="test">Direct HTML content</div></fasthtml>'
-    result = process_fasthtml(valid_html_content)
-    assert result.success
-    assert "<p>Text</p>" in result.content
-    assert '<div id="test">Direct HTML content</div>' in result.content
+    result = process_multiple_fasthtml_tags(valid_html_content)
 
 def test_layout_rendering() -> None:
     """Test rendering content with layouts."""

@@ -5,7 +5,7 @@ from mistletoe import Document
 from pyxie.renderer import PyxieHTMLRenderer, render_markdown, render_block
 from pyxie.parser import parse
 from pyxie.types import ContentBlock
-from pyxie.fasthtml import process_fasthtml_in_content
+from pyxie.fasthtml import process_multiple_fasthtml_tags
 
 def test_fasthtml_escaping_in_code_blocks():
     """Test that FastHTML tags in code blocks are escaped correctly."""

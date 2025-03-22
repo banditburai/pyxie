@@ -7,7 +7,7 @@ especially for complex nested component structures.
 
 import logging
 
-from pyxie.fasthtml import render_fasthtml_block
+from pyxie.fasthtml import process_single_fasthtml_block
 import fasthtml.common as ft_common
 
 # Add these components for the tests to work with ft_common namespace
@@ -24,8 +24,9 @@ def test_simple_component():
     content = """<fasthtml>
 show(Div("Hello World", cls="test-class"))
 </fasthtml>"""
-    result = render_fasthtml_block(content)
-    assert "<div class=\"test-class\">Hello World</div>" in result
+    result = process_single_fasthtml_block(content)
+    assert result.is_success
+    assert "<div class=\"test-class\">Hello World</div>" in result.content
 
 
 def test_nested_components():
@@ -37,9 +38,10 @@ component = Div(
 )
 show(component)
 </fasthtml>"""
-    result = render_fasthtml_block(content)
-    assert "<div class=\"outer\">" in result
-    assert "<div class=\"inner\">Inner content</div>" in result
+    result = process_single_fasthtml_block(content)
+    assert result.is_success
+    assert "<div class=\"outer\">" in result.content
+    assert "<div class=\"inner\">Inner content</div>" in result.content
 
 
 def test_component_function():
@@ -50,8 +52,9 @@ def MyComponent(text):
     
 show(MyComponent("Hello from function"))
 </fasthtml>"""
-    result = render_fasthtml_block(content)
-    assert "<div class=\"custom\">Hello from function</div>" in result
+    result = process_single_fasthtml_block(content)
+    assert result.is_success
+    assert "<div class=\"custom\">Hello from function</div>" in result.content
 
 
 def test_list_comprehension():
@@ -63,11 +66,12 @@ component = Div(
 )
 show(component)
 </fasthtml>"""
-    result = render_fasthtml_block(content)
-    assert "<div class=\"list-container\">" in result
-    assert "<p class=\"item-0\">Item 0</p>" in result
-    assert "<p class=\"item-1\">Item 1</p>" in result
-    assert "<p class=\"item-2\">Item 2</p>" in result
+    result = process_single_fasthtml_block(content)
+    assert result.is_success
+    assert "<div class=\"list-container\">" in result.content
+    assert "<p class=\"item-0\">Item 0</p>" in result.content
+    assert "<p class=\"item-1\">Item 1</p>" in result.content
+    assert "<p class=\"item-2\">Item 2</p>" in result.content
 
 
 def test_image_gallery():
@@ -87,12 +91,13 @@ gallery = Div(
 )
 show(gallery)
 </fasthtml>"""
-    result = render_fasthtml_block(content)
-    assert "<div class=\"gallery\">" in result
-    assert "<div class=\"card-style\">" in result
-    assert "<img src=\"image1.jpg\" alt=\"Image 1\" class=\"img-style\">" in result
-    assert "<img src=\"image2.jpg\" alt=\"Image 2\" class=\"img-style\">" in result
-    assert "<img src=\"image3.jpg\" alt=\"Image 3\" class=\"img-style\">" in result
+    result = process_single_fasthtml_block(content)
+    assert result.is_success
+    assert "<div class=\"gallery\">" in result.content
+    assert "<div class=\"card-style\">" in result.content
+    assert "<img src=\"image1.jpg\" alt=\"Image 1\" class=\"img-style\">" in result.content
+    assert "<img src=\"image2.jpg\" alt=\"Image 2\" class=\"img-style\">" in result.content
+    assert "<img src=\"image3.jpg\" alt=\"Image 3\" class=\"img-style\">" in result.content
 
 
 def test_bar_chart():
@@ -121,13 +126,14 @@ data = [
 
 show(BarChart(data))
 </fasthtml>"""
-    result = render_fasthtml_block(content)
-    assert "<div class=\"chart\">" in result
-    assert "<div class=\"bar-container\">" in result
-    assert "<div class=\"bar\" style=\"width: " in result
-    assert "<p class=\"label\">A</p>" in result
-    assert "<p class=\"label\">B</p>" in result
-    assert "<p class=\"label\">C</p>" in result
+    result = process_single_fasthtml_block(content)
+    assert result.is_success
+    assert "<div class=\"chart\">" in result.content
+    assert "<div class=\"bar-container\">" in result.content
+    assert "<div class=\"bar\" style=\"width: " in result.content
+    assert "<p class=\"label\">A</p>" in result.content
+    assert "<p class=\"label\">B</p>" in result.content
+    assert "<p class=\"label\">C</p>" in result.content
 
 
 if __name__ == "__main__":

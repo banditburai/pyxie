@@ -15,359 +15,435 @@
 """FastHTML processing for Pyxie - execution of Python code and rendering of components."""
 
 import logging
-import traceback
 import re
-from typing import Optional, Any, List, Tuple, Union, Dict
+from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
+from functools import lru_cache, wraps
+
 from fastcore.xml import to_xml
 import fasthtml.common as ft_common
+
 from .errors import (
-    FastHTMLError, FastHTMLExecutionError,
-    FastHTMLConversionError
+    FastHTMLConversionError, FastHTMLError, FastHTMLExecutionError,
+    FastHTMLImportError, FastHTMLRenderError, Result, format_error_html
 )
-from .utilities import log, extract_content, safe_import
+from .utilities import extract_content, log, safe_import
 
 logger = logging.getLogger(__name__)
 
-FASTHTML_BLOCK_NAMES = {'ft', 'fasthtml'}
-FASTHTML_TAG = 'fasthtml'
-FASTHTML_TAG_PATTERN = re.compile(f'<{FASTHTML_TAG}([^>]*)>(.*?)</{FASTHTML_TAG}>', re.DOTALL)
+# Core constants and patterns
+FASTHTML_BLOCK_NAMES = ('py', 'python', 'fasthtml')
+FASTHTML_TAG_PATTERN = re.compile(r'<(py|python|fasthtml)([^>]*)>(.*?)</\1>', re.DOTALL)
 FASTHTML_ATTR_PATTERN = re.compile(r'(\w+)=(["\'])(.*?)\2', re.DOTALL)
+IMPORT_PATTERN = re.compile(r'^(?:from\s+([^\s]+)\s+import|import\s+([^#\n]+))', re.MULTILINE)
+SCRIPT_TAG_PATTERN = re.compile(r'(<script[^>]*>)(.*?)(</script>)', re.DOTALL)
 
 @dataclass
 class FastHTMLTagMatch:
     """Parsed FastHTML tag."""
-    full_match: str
+    tag_name: str
     attributes: Dict[str, str]
     content: str
+    full_match: str
     description: Optional[str] = None
 
+# ---- Error Handling Decorators ----
+
+def catch_errors(error_context="general"):
+    """Decorator to catch and format errors in FastHTML processing."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                error_message = f"{e.__class__.__name__}: {e}"
+                log(logger, "FastHTML", "error", error_context, error_message)
+                
+                # Create an appropriate FastHTMLError
+                error = e if isinstance(e, FastHTMLError) else map_exception_to_fasthtml_error(e, error_context)
+                return Result.failure(error)
+        return wrapper
+    return decorator
+
+def map_exception_to_fasthtml_error(exception: Exception, context: str) -> FastHTMLError:
+    """Map a Python exception to a specific FastHTML error type."""
+    error_message = f"{exception.__class__.__name__}: {exception}"
+    
+    if context == "execute":
+        if isinstance(exception, SyntaxError):
+            return FastHTMLExecutionError(f"Syntax error: {exception}")
+        return FastHTMLExecutionError(error_message)
+    elif context == "render":
+        return FastHTMLRenderError(error_message)
+    elif context == "import":
+        return FastHTMLImportError(error_message)
+    elif context == "conversion":
+        return FastHTMLConversionError(error_message)
+    else:
+        return FastHTMLError(error_message)
+
+# ---- Utility Functions ----
+
+def validate_content(content: str, is_escaped: bool = False) -> Optional[Result[str]]:
+    """
+    Common validation for content processing functions.
+    Returns a Result if validation completes the process, or None to continue processing.
+    """
+    if not content:
+        return Result.success("")
+    
+    if is_escaped:
+        return Result.success(escape_fasthtml_content(content))
+    
+    return None  # Signal to proceed with processing
+
+# ---- Content Detection ----
+
+def is_fasthtml_content(content: str) -> bool:
+    """Check if content contains FastHTML tags."""
+    return bool(content and isinstance(content, str) and FASTHTML_TAG_PATTERN.search(content.strip()))
+
+def is_direct_html_content(content: str) -> bool:
+    """Check if content appears to be direct HTML."""
+    return (content and isinstance(content, str) and 
+            content.strip().startswith('<') and 
+            content.strip().endswith('>') and 
+            not content.strip().startswith('<%'))
+
+def is_single_complete_tag(content: str) -> bool:
+    """Check if content is a single complete FastHTML tag."""
+    return (content and isinstance(content, str) and 
+            content.strip().startswith('<') and 
+            bool(FASTHTML_TAG_PATTERN.match(content.strip())))
+
+# ---- Tag Parsing ----
+
+def parse_attributes(attributes_str: str) -> Dict[str, str]:
+    """Parse HTML-like attributes into a dictionary."""
+    if not attributes_str:
+        return {}
+    
+    return {name: value for name, _, value in FASTHTML_ATTR_PATTERN.finditer(attributes_str)}
+
+def parse_fasthtml_tags(content: str, first_only=False) -> List[FastHTMLTagMatch]:
+    """
+    Parse FastHTML tags from content.
+    Returns a list of FastHTMLTagMatch objects or an empty list if none found.
+    If first_only is True, returns only the first match.
+    """
+    if not content:
+        return []
+    
+    if first_only:
+        match = FASTHTML_TAG_PATTERN.search(content)
+        if not match:
+            return []
+            
+        tag = FastHTMLTagMatch(
+            tag_name=match.group(1),
+            full_match=match.group(0),
+            attributes=parse_attributes(match.group(2)),
+            content=extract_content(match.group(3)),
+            description=None
+        )
+        
+        if 'description' in tag.attributes:
+            tag.description = tag.attributes['description']
+            
+        return [tag]
+    
+    # Find all tags
+    return [
+        FastHTMLTagMatch(
+            tag_name=match.group(1),
+            full_match=match.group(0),
+            attributes=parse_attributes(match.group(2)),
+            content=extract_content(match.group(3)),
+            description=parse_attributes(match.group(2)).get('description')
+        )
+        for match in FASTHTML_TAG_PATTERN.finditer(content)
+    ]
+
+# ---- JavaScript Conversion ----
+
+@catch_errors("conversion")
 def py_to_js(obj, indent=0, indent_str="  "):
     """Convert Python objects to JavaScript code."""
-    try:
-        current_indent = indent_str * indent
-        next_indent = indent_str * (indent + 1)
-        
-        match obj:
-            case None:
-                return "null"
-            case bool():
-                return "true" if obj else "false"
-            case int() | float():
-                return str(obj)
-            case str() as s if s.startswith("__FUNCTION__"):
-                func_content = s[12:]  # Remove prefix
-                return func_content if func_content.startswith("function") else f"function(index) {{ return {func_content}; }}"
-            case str():
-                # Escape special characters
-                escaped = obj.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
-                return f'"{escaped}"'
-            case dict() if not obj:
+    current_indent = indent_str * indent
+    next_indent = indent_str * (indent + 1)
+    
+    match obj:
+        case None:
+            return "null"
+        case bool():
+            return "true" if obj else "false"
+        case int() | float():
+            return str(obj)
+        case str() if obj.startswith("__FUNCTION__"):
+            func_content = obj[12:]  # Remove prefix
+            return func_content if func_content.startswith("function") else f"function(index) {{ return {func_content}; }}"
+        case str():
+            # Escape special characters
+            escaped = obj.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+            return f'"{escaped}"'
+        case dict():
+            if not obj:
                 return "{}"
-            case dict():
-                pairs = [f"{next_indent}{py_to_js(k)}: {py_to_js(v, indent + 1, indent_str)}" for k, v in obj.items()]
-                return "{\n" + ",\n".join(pairs) + f"\n{current_indent}}}"
-            case list() if not obj:
+            pairs = [f"{next_indent}{py_to_js(k)}: {py_to_js(v, indent + 1, indent_str)}" for k, v in obj.items()]
+            return "{\n" + ",\n".join(pairs) + f"\n{current_indent}}}"
+        case list():
+            if not obj:
                 return "[]"
-            case list():
-                items = [f"{next_indent}{py_to_js(item, indent + 1, indent_str)}" for item in obj]
-                return "[\n" + ",\n".join(items) + f"\n{current_indent}]"
-            case _ if callable(obj):
-                func_name = getattr(obj, '__name__', '<lambda>')
-                return f"function {func_name if func_name != '<lambda>' else ''}(index) {{ return index * 100; }}"
-            case _:
-                return str(obj)
-            
-    except Exception as e:
-        log(logger, "FastHTML", "error", "conversion", f"Failed to convert {type(obj).__name__} to JavaScript: {str(e)}")
-        raise FastHTMLConversionError(f"Failed to convert {type(obj).__name__} to JavaScript: {str(e)}") from e
+            items = [f"{next_indent}{py_to_js(item, indent + 1, indent_str)}" for item in obj]
+            return "[\n" + ",\n".join(items) + f"\n{current_indent}]"
+        case _ if callable(obj):
+            func_name = getattr(obj, '__name__', '<lambda>')
+            return f"function {func_name if func_name != '<lambda>' else ''}(index) {{ return index * 100; }}"
+        case _:
+            return str(obj)
 
 def js_function(func_str):
     """Create JavaScript function strings."""
     return f"__FUNCTION__{func_str}"
 
-def parse_fasthtml_tag(content: str) -> Optional[FastHTMLTagMatch]:
-    """Extract and parse a FastHTML tag from content."""
-    if not content or f'<{FASTHTML_TAG}' not in content:
-        return None
+# ---- Code Execution ----
+
+@lru_cache(maxsize=1)
+@catch_errors("setup")
+def create_base_namespace() -> dict:
+    """Create the base namespace with common functions and modules."""
+    # Helper functions for namespace
+    def show_function(obj):
+        return obj
         
-    match = FASTHTML_TAG_PATTERN.search(content)
-    if not match:
-        return None
-    
-    attributes_str, inner_content = match.groups()
-    attributes = {}
-    
-    if attributes_str:
-        for attr_match in FASTHTML_ATTR_PATTERN.finditer(attributes_str):
-            name, _, value = attr_match.groups()
-            attributes[name] = value
-    
-    inner_content = extract_content(inner_content)
-    
-    return FastHTMLTagMatch(
-        full_match=match.group(0),
-        attributes=attributes,
-        content=inner_content,
-        description=attributes.get('description')
-    )
-
-def is_content_type(content: str, check_type: str = "fasthtml") -> bool:
-    """Check if content matches specified type (fasthtml, fasthtml_block, or direct_html)"""
-    if check_type == "fasthtml_block" and isinstance(content, str):
-        return content.lower() in FASTHTML_BLOCK_NAMES
+    def convert_function(obj):
+        return obj
         
-    if not content or not isinstance(content, str): 
-        return False
-        
-    content = content.strip()
-    
-    if check_type == "fasthtml":
-        return bool(FASTHTML_TAG_PATTERN.search(content))
-    elif check_type == "direct_html":
-        return (content.startswith('<') and 
-                content.endswith('>') and 
-                not content.startswith('<%'))
-    
-    return False
-
-def is_fasthtml_content(content: str) -> bool:
-    """Check if content is FastHTML."""
-    return is_content_type(content, "fasthtml")
-
-def is_fasthtml_block(name: str) -> bool:
-    """Check if block name indicates FastHTML."""
-    return is_content_type(name, "fasthtml_block")
-
-def is_direct_html_content(content: str) -> bool:
-    """Check if content is direct HTML."""
-    return is_content_type(content, "direct_html")
-
-def create_namespace(context_path=None) -> dict:
-    """Create a namespace for FastHTML execution."""
-    namespace = {name: getattr(ft_common, name) 
-                for name in dir(ft_common) if not name.startswith('_')}
+    namespace = {
+        name: getattr(ft_common, name) 
+        for name in dir(ft_common) if not name.startswith('_')
+    }
     
     namespace.update({
-        'show': lambda obj: obj,
+        'show': show_function,
+        'js_function': js_function,
         'NotStr': ft_common.NotStr,
-        'convert': lambda obj: obj,
+        'convert': convert_function,
         '__builtins__': globals()['__builtins__'],
         '__name__': '__main__'
     })
     
     return namespace
 
-def process_imports(code: str, namespace: dict, context_path=None) -> None:
+@catch_errors("setup")
+def create_namespace(context_path=None) -> dict:
+    """Create a namespace for FastHTML execution."""
+    return create_base_namespace().copy()
+
+@catch_errors("import")
+def process_imports(code: str, namespace: dict, context_path=None) -> Result[None]:
     """Process import statements in code."""
-    import_pattern = re.compile(r'^(?:from\s+([^\s]+)\s+import|import\s+([^#\n]+))', re.MULTILINE)
+    for match in IMPORT_PATTERN.finditer(code):
+        # Handle both "from X import Y" and "import X, Y, Z" patterns
+        if module_name := match.group(1):  # from X import Y
+            safe_import(module_name.strip(), namespace, context_path, logger)
+        elif modules := match.group(2):    # import X, Y, Z
+            # Import each module in the comma-separated list, ignoring comments
+            [safe_import(clean_module, namespace, context_path, logger) 
+             for module in modules.split(',')
+             if (clean_module := module.split('#')[0].strip())]
     
-    for match in import_pattern.finditer(code):
-        if match.group(1):  # from X import Y
-            safe_import(match.group(1).strip(), namespace, context_path, logger)
-        else:  # import X, Y, Z
-            for module in match.group(2).split(','):
-                clean_module = module.split('#')[0].strip()
-                if clean_module:
-                    safe_import(clean_module, namespace, context_path, logger)
+    return Result.success(None)
 
-class FastHTMLExecutor:
-    """Executes FastHTML code blocks and returns results."""
+@catch_errors("execute")
+def execute_fasthtml_code(code: str, context_path: Optional[str] = None) -> Result[List[Any]]:
+    """Execute FastHTML code and return captured results or error."""
+    namespace = create_namespace(context_path)
+    namespace["__results"] = []
     
-    def __init__(self, context_path=None):
-        self.context_path = context_path
-        self.namespace = None
+    # Set up result capture
+    def show_with_capture(obj):
+        result = original_show(obj)
+        namespace["__results"].append(result)
+        return result
         
-    def __enter__(self):
-        self.namespace = self.create_namespace()
-        return self
-        
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        return False
-        
-    def create_namespace(self) -> dict:
-        namespace = create_namespace(self.context_path)
-        namespace["__results"] = []
-        
-        original_show = namespace["show"]
-        def show_with_capture(obj):
-            result = original_show(obj)
-            namespace["__results"].append(result)
-            return result
-        namespace["show"] = show_with_capture
-        
-        return namespace
+    original_show = namespace["show"]
+    namespace["show"] = show_with_capture
     
-    def execute(self, code: str) -> List[Any]:
-        """Execute FastHTML code and return results."""
-        if self.namespace is None:
-            self.namespace = self.create_namespace()
-            
-        try:
-            process_imports(code, self.namespace, self.context_path)
-            exec(code, self.namespace)
-            
-            results = self.namespace.get("__results", [])
-            if not results:
-                log(logger, "FastHTML", "info", "execute", "No results captured. Use show() to display components.")
-            return results
-            
-        except SyntaxError as e:
-            return self._handle_execution_error("Syntax error", e, f"Syntax error in FastHTML code: {str(e)}")
-        except NameError as e:
-            return self._handle_execution_error("Name error", e, f"Name error in FastHTML code: {str(e)}")
-        except Exception as e:
-            return self._handle_execution_error("Execution error", e, f"Error executing FastHTML code: {str(e)}")
+    # Check syntax first - will raise SyntaxError if invalid
+    compile(code, '<string>', 'exec')
     
-    def _handle_execution_error(self, error_type: str, exception: Exception, error_message: str) -> None:
-        """Handle execution errors with consistent logging and re-raising."""
-        log(logger, "FastHTML", "error", "execute", f"{error_type}: {str(exception)}")
-        raise FastHTMLExecutionError(error_message) from exception
+    # Process imports and execute code
+    imports_result = process_imports(code, namespace, context_path)
+    if not imports_result.is_success:
+        return imports_result
+    
+    # Execute the code and capture results
+    exec(code, namespace)
+    
+    # Return captured results
+    results = namespace.get("__results", [])
+    if not results:
+        log(logger, "FastHTML", "info", "execute", 
+            "No results captured. Use show() to display components.")
+    return Result.success(results)
 
-class FastHTMLRenderer:
-    """Renders FastHTML components to XML."""
-    
-    @classmethod
-    def to_xml(cls, results: List[Any]) -> str:
-        """Convert FastHTML results to XML."""
-        if not results:
-            return ""
-        return "\n".join(cls._render_component(r) for r in results)
-    
-    @classmethod
-    def _render_component(cls, component: Any) -> str:
-        """Render a single component to XML."""
-        if hasattr(component, "__pyxie_render__"):
-            return component.__pyxie_render__()
-        return to_xml(component)
-    
-    @staticmethod
-    def handle_error(error: Exception) -> str:
-        """Format error message."""
-        return (f"SyntaxError: {error} at line {error.lineno}, offset {error.offset}" 
-                if isinstance(error, SyntaxError) else 
-                f"{error.__class__.__name__}: {error}\n{traceback.format_exc()}")
+# ---- Rendering ----
 
+@catch_errors("render")
+def render_components(results: List[Any], description: Optional[str] = None) -> str:
+    """Render FastHTML components to XML."""
+    if not results:
+        return ""
+    
+    # Start with description comment if provided
+    xml_parts = [f"<!-- {description} -->"] if description else []
+    
+    # Add rendered components
+    xml_parts.extend(
+        component.__pyxie_render__() if hasattr(component, "__pyxie_render__") else to_xml(component)
+        for component in results
+    )
+    
+    return "\n".join(xml_parts)
+
+@catch_errors("render")
 def protect_script_tags(xml_content: str) -> str:
     """Protect script tag content from HTML processing."""
     if not xml_content or "<script" not in xml_content:
         return xml_content
     
-    script_pattern = re.compile(r'(<script[^>]*>)(.*?)(</script>)', re.DOTALL)
-    
     def process_script(match):
         opening_tag, content, closing_tag = match.groups()
         
-        for entity, char in [('&lt;', '<'), ('&gt;', '>'), ('&amp;', '&'), 
-                            ('&quot;', '"'), ('&#x27;', "'"), ('&#39;', "'")]:
+        # Unescape HTML entities in script content - using a simpler approach
+        html_entities = {'&lt;': '<', '&gt;': '>', '&amp;': '&', '&quot;': '"', '&#x27;': "'", '&#39;': "'"}
+        for entity, char in html_entities.items():
             content = content.replace(entity, char)
         
+        # Remove pre/code wrappers
         content = re.sub(r'<pre><code[^>]*>(.*?)</code></pre>', r'\1', content, flags=re.DOTALL)
         
+        # Add data-raw attribute if not present
         if "data-raw" not in opening_tag:
             opening_tag = opening_tag.replace("<script", "<script data-raw=\"true\"", 1)
             
         return f"{opening_tag}{content}{closing_tag}"
     
-    return script_pattern.sub(process_script, xml_content)
+    return SCRIPT_TAG_PATTERN.sub(process_script, xml_content)
 
-def execute_and_render(
-    content: str,
-    description: Optional[str] = None,
+def escape_fasthtml_content(content: str) -> str:
+    """Escape FastHTML tags in content to prevent execution."""
+    return content.replace('<', '&lt;') if content else content
+
+# ---- Core Processing Functions ----
+
+@catch_errors("process")
+def process_tag(tag_match: FastHTMLTagMatch, context_path: Optional[str] = None) -> Result[str]:
+    """
+    Process a single FastHTML tag match.
+    This is the core execution function that takes a parsed tag and produces rendered output.
+    """
+    # If it's direct HTML, return it as-is
+    if is_direct_html_content(tag_match.content):
+        return Result.success(tag_match.content)
+    
+    # Execute the code and chain operations: execute -> render -> protect script tags
+    return (execute_fasthtml_code(tag_match.content, context_path)
+            .map(lambda components: render_components(components, tag_match.description))
+            .map(protect_script_tags))
+
+@catch_errors("process")
+def execute_raw_code_block(content: str, context_path: Optional[str] = None) -> Result[str]:
+    """Execute raw FastHTML code and return rendered HTML."""
+    return (execute_fasthtml_code(content, context_path)
+            .map(render_components)
+            .map(protect_script_tags))
+
+@catch_errors("process")
+def process_multiple_fasthtml_tags(
+    content: str, 
     context_path: Optional[str] = None,
-    return_errors: bool = False,
-    add_script_dependencies: bool = True,
-    ) -> Union[str, Tuple[str, List[str]]]:
-    """Execute FastHTML code and render results."""
-    if not content:
-        log(logger, "FastHTML", "warning", "render", "Empty content")
-        return "" if not return_errors else ("", [])
-    
-    try:
-        results = [content] if is_direct_html_content(content) else \
-                 FastHTMLExecutor(context_path).execute(content)
-        
-        xml = FastHTMLRenderer.to_xml(results)
-        if description:
-            xml = f"<!-- {description} -->\n{xml}"
-        if add_script_dependencies:
-            xml = protect_script_tags(xml)
-            
-        return xml if not return_errors else (xml, [])
-    except (FastHTMLError, Exception) as e:
-        is_fasthtml_error = isinstance(e, FastHTMLError)
-        error_message = f"{e.__class__.__name__}: {e}" if is_fasthtml_error else FastHTMLRenderer.handle_error(e)
-        log(logger, "FastHTML", "error", "render", error_message)
-        
-        if return_errors:
-            return "", [error_message]
-        return f'<div class="fasthtml-error">{error_message}</div>'
-
-def render_fasthtml_block(content: str, **kwargs) -> Union[str, Tuple[str, List[str]]]:
-    """Render a FastHTML block or raw content."""
-    tag_match = parse_fasthtml_tag(content)
-    
-    return execute_and_render(
-        tag_match.content if tag_match else content,
-        description=tag_match.description if tag_match else None,
-        **kwargs
-    )
-
-def process_fasthtml_in_content(
-    content: str,
-    context_path: Optional[str] = None,
-    ) -> str:
-    """Process all FastHTML blocks in content."""
-    if not content or f'<{FASTHTML_TAG}' not in content:
-        return content
-    
-    return FASTHTML_TAG_PATTERN.sub(
-        lambda match: _replace_fasthtml_match(match, context_path), 
-        content
-    )
-
-def _check_syntax(code: str) -> Optional[str]:
-    """Check code syntax and return error message if invalid, None if valid."""
-    try:
-        compile(code, '<string>', 'exec')
-        return None
-    except SyntaxError as e:
-        msg = f"Syntax error in code: {str(e)}"
-        log(logger, "FastHTML", "error", "execute", msg)
-        return f'<div class="fasthtml-error">FastHTMLExecutionError: Syntax error in FastHTML code: {str(e)}</div>'
-
-def _replace_fasthtml_match(match, context_path: Optional[str] = None) -> str:
-    """Replace FastHTML tag with rendered content."""
-    try:
-        full_match = match.group(0)
-                
-        if not (tag_match := parse_fasthtml_tag(full_match)):
-            return full_match
-                    
-        if is_direct_html_content(tag_match.content):
-            return tag_match.content
-        
-        if error_msg := _check_syntax(tag_match.content):
-            return error_msg
-        
-        if isinstance(result := render_fasthtml_block(full_match, context_path=context_path), tuple):
-            return result[0] or '<div class="fasthtml-error">FastHTMLExecutionError: Failed to render FastHTML</div>'
-        
+    is_escaped: bool = False
+) -> Result[str]:
+    """
+    Process all FastHTML tags embedded in content.
+    Finds and replaces all FastHTML tags in the content with their rendered output.
+    """
+    # Apply common validation
+    if result := validate_content(content, is_escaped):
         return result
-    except Exception as e:
-        error_message = f"FastHTMLExecutionError: Error in FastHTML execution: {e}"
-        log(logger, "FastHTML", "error", "process", error_message)
-        return f'<div class="fasthtml-error">{error_message}</div>'
-
-def render_fasthtml(content: str, context_path: Optional[str] = None, return_errors: bool = False) -> Union[str, Tuple[str, List[str]]]:
-    """Render any content that may contain FastHTML."""
-    try:
-        if is_fasthtml_content(content):
-            return render_fasthtml_block(content, context_path=context_path, return_errors=return_errors)
+    
+    # Process each matching tag
+    def replace_tag(match):
+        tags = parse_fasthtml_tags(match.group(0), first_only=True)
+        if not tags:
+            return match.group(0)
         
-        result = process_fasthtml_in_content(content, context_path)
-        return result if not return_errors else (result, [])
-    except Exception as e:
-        error_message = f"{e.__class__.__name__}: {e}"
-        log(logger, "FastHTML", "error", "render", error_message)
-        return ("", [error_message]) if return_errors else f'<div class="fasthtml-error">{error_message}</div>'
+        # Process the tag and handle the result
+        result = process_tag(tags[0], context_path)
+        return result.content if result.is_success else format_error_html(result.error)
+    
+    # Process and return in one step
+    return Result.success(FASTHTML_TAG_PATTERN.sub(replace_tag, content))
+
+@catch_errors("process")
+def process_single_fasthtml_block(
+    content: str, 
+    context_path: Optional[str] = None,
+    is_escaped: bool = False
+) -> Result[str]:
+    """
+    Process a single FastHTML block or raw code.
+    Handles a complete FastHTML tag or raw code block, returning rendered output.
+    """
+    # Apply common validation
+    if not content:
+        log(logger, "FastHTML", "warning", "process", "Empty content")
+        return Result.success("")
+    
+    if result := validate_content(content, is_escaped):
+        return result
+    
+    # Try to parse as a FastHTML tag
+    tags = parse_fasthtml_tags(content, first_only=True)
+    
+    if tags:
+        # Process the parsed tag
+        return process_tag(tags[0], context_path)
+    elif is_direct_html_content(content):
+        # Pass through direct HTML content
+        return Result.success(content)
+    else:
+        # Treat as raw FastHTML code
+        return execute_raw_code_block(content, context_path)
+
+@catch_errors("render")
+def render_fasthtml(
+    content: str, 
+    context_path: Optional[str] = None, 
+    return_errors: bool = False
+) -> Union[str, Tuple[str, List[str]]]:
+    """Main entry point for rendering FastHTML content."""
+    # Quick check for empty content
+    if not content:
+        return ("", []) if return_errors else ""
+        
+    # Not FastHTML content, return as is
+    if not is_fasthtml_content(content):
+        return (content, []) if return_errors else content
+    
+    # Process content based on its structure
+    result = (
+        process_single_fasthtml_block(content, context_path) 
+        if is_single_complete_tag(content)
+        else process_multiple_fasthtml_tags(content, context_path)
+    )
+    
+    # Return appropriate format based on return_errors flag
+    return (
+        (result.content, []) if result.is_success else ("", [str(result.error)])
+    ) if return_errors else (
+        result.content if result.is_success else format_error_html(result.error)
+    )

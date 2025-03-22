@@ -199,7 +199,7 @@ def _validate_inner_tags(block_content: str, content: str, tag_name: str, start_
     
     return True
 
-def _create_content_block(tag_name: str, content: str, params_str: str, index: int) -> ContentBlock:
+def _create_content_block(tag_name: str, content: str, params_str: str, index: int, is_escaped: bool = False) -> ContentBlock:
     """Create a ContentBlock instance from tag information."""
     params = parse_params(params_str) if params_str else {}
     return ContentBlock(
@@ -207,7 +207,8 @@ def _create_content_block(tag_name: str, content: str, params_str: str, index: i
         content=content,
         params=params,
         content_type='markdown',
-        index=index
+        index=index,
+        is_escaped=is_escaped
     )
 
 def _warn_unclosed_tag(tag_name: str, line_num: int, filename: Optional[str] = None) -> None:
@@ -266,12 +267,16 @@ def _process_tag_match(content: str,
     if not _validate_inner_tags(block_content, content, tag_name, start_pos, open_line, code_blocks, filename):
         return None
     
+    # Check if this tag is inside a code block
+    tag_is_escaped = is_in_code_block(start_pos, code_blocks)
+    
     # Create content block
     return _create_content_block(
         tag_name, 
         block_content, 
         params_str, 
-        0  # Index will be set by the caller
+        0,  # Index will be set by the caller
+        tag_is_escaped
     )
 
 def find_content_blocks(content: str, filename: Optional[str] = None, warn_unclosed: bool = True) -> Dict[str, List[ContentBlock]]:
@@ -287,7 +292,7 @@ def find_content_blocks(content: str, filename: Optional[str] = None, warn_unclo
             open_line, code_blocks, filename
         )
         
-        if block:
+        if block: 
             # Set correct index based on existing blocks
             block.index = len(blocks.get(tag_name, []))
             blocks.setdefault(tag_name, []).append(block)
