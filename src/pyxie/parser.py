@@ -49,6 +49,7 @@ XML_TAG_PATTERN = re.compile(r'<(?P<tag>\w+)(?:\s+(?P<params>[^>]*))?>\s*(?P<con
 LINE_NUMBER_PATTERN = re.compile(r'line (\d+)', re.IGNORECASE)
 LIST_ITEM_CODE_PATTERN = re.compile(r'- `<[^>]+>`:', re.MULTILINE)
 HTML_ENTITY_PATTERN = re.compile(r'&[a-zA-Z]+;|&#\d+;|&#x[a-fA-F0-9]+;')
+HTML_CODE_BLOCK_PATTERN = re.compile(r'<pre(?:\s[^>]*)?><code(?:\s[^>]*)?>.*?</code></pre>', re.DOTALL)
 
 # Tag sets
 FASTHTML_BLOCK_NAMES = frozenset({'ft', 'fasthtml'})
@@ -89,7 +90,10 @@ def find_code_blocks(content: str) -> List[Tuple[int, int]]:
         *[(m.start(), m.end()) for m in INLINE_CODE_PATTERN.finditer(content)],
         
         # List item code blocks with lookahead
-        *[(m.start(), min(m.end() + 50, len(content))) for m in LIST_ITEM_CODE_PATTERN.finditer(content)]
+        *[(m.start(), min(m.end() + 50, len(content))) for m in LIST_ITEM_CODE_PATTERN.finditer(content)],
+        
+        # HTML code blocks (<pre><code>...</code></pre>)
+        *[(m.start(), m.end()) for m in HTML_CODE_BLOCK_PATTERN.finditer(content)]
     ]
     
     return sorted(code_blocks, key=lambda x: x[0])
@@ -267,8 +271,14 @@ def _process_tag_match(content: str,
     if not _validate_inner_tags(block_content, content, tag_name, start_pos, open_line, code_blocks, filename):
         return None
     
-    # Check if this tag is inside a code block
-    tag_is_escaped = is_in_code_block(start_pos, code_blocks)
+    # Check if this tag is inside a code block (either the start or the end)
+    tag_is_escaped = (
+        is_in_code_block(start_pos, code_blocks) or 
+        is_in_code_block(closing_pos, code_blocks) or
+        (tag_name.lower() in FASTHTML_BLOCK_NAMES and
+         any(is_in_code_block(pos, code_blocks) 
+             for pos in range(start_pos, closing_pos, max(1, (closing_pos - start_pos) // 5))))
+    )
     
     # Create content block
     return _create_content_block(
