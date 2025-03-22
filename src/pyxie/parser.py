@@ -14,24 +14,16 @@
 
 """Parse markdown content with frontmatter and content blocks."""
 
-# Standard library imports
 import re
 import logging
 from dataclasses import dataclass
 from itertools import chain
 from typing import Dict, Iterator, List, Optional, Tuple, Any, Set
-from collections import defaultdict
 from pathlib import Path
-from datetime import datetime
-
-# Third-party imports
 import yaml
-
-# Internal imports
 from .constants import DEFAULT_METADATA
 from .types import ContentBlock, ContentProvider, Metadata
-from .utilities import merge_metadata, log, get_line_number, convert_value
-from .errors import BlockError, FrontmatterError, ParseError
+from .utilities import log, get_line_number, convert_value
 from .params import parse_params
 
 logger = logging.getLogger(__name__)
@@ -119,7 +111,7 @@ def is_in_code_block(position: int, code_blocks: List[Tuple[int, int]]) -> bool:
         start, end = code_blocks[left-1]
         if start <= position < end:
             return True
-    
+            
     return False
 
 def should_ignore_tag(tag_name: str, tag_pos: int, content: str, code_blocks: List[Tuple[int, int]]) -> bool:
@@ -136,7 +128,7 @@ def log_tag_warning(tag: str, line_num: int, parent_name: Optional[str] = None,
                   parent_line: Optional[int] = None, file_path: Optional[Path] = None) -> None:
     """Log warning about unclosed tag."""
     is_inner = parent_name and parent_line
-    message = (f"Unclosed inner tag <{tag}> at line {line_num} inside <{parent_name}> block starting at line {parent_line}" 
+    message = (f"Unclosed inner tag <{tag}> at line {line_num} inside <{parent_name}> block starting at line {parent_line}"
                if is_inner else f"Unclosed block <{tag}> at line {line_num}")
     log(logger, "Parser", "warning", "blocks", message, file_path)
 
@@ -340,7 +332,7 @@ def find_content_blocks(content: str, filename: Optional[str] = None, warn_unclo
     if warn_unclosed:
         for tag_name, line_num in scan_results['unclosed']:
             _warn_unclosed_tag(tag_name, line_num, filename)
-            
+    
     return blocks
 
 def iter_blocks(content: str) -> Iterator[ContentBlock]:
@@ -385,15 +377,15 @@ def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
     # No frontmatter markers
     if not content.strip().startswith('---'):
         return {}, content
-    
+        
     # Empty frontmatter
     if empty_match := EMPTY_FRONTMATTER_PATTERN.match(content):
         return {}, empty_match.group('content')
-    
+        
     # Check for valid frontmatter pattern
     if not (match := FRONTMATTER_PATTERN.match(content)):
         return {}, content
-    
+        
     frontmatter_text, remaining_content = match.group('frontmatter'), match.group('content')
     
     try:
@@ -414,7 +406,7 @@ def parse(content: str, filename: Optional[str] = None) -> ParsedContent:
     
     # Find all content blocks
     blocks = find_content_blocks(content_without_frontmatter, filename=filename)
-    
+        
     return ParsedContent(
         metadata=metadata,
         blocks=blocks,

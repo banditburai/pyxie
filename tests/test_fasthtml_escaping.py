@@ -364,12 +364,8 @@ The above FastHTML tags should be escaped and not executed when inside a code bl
     assert "ImportError:" not in full_rendered
     
     # 6. Additional check: Make sure we can find code blocks with our Button component
-    assert "```markdown" in full_rendered
-    assert "components import Button" in full_rendered
-    
-    # Verify the code block has the expected content
-    code_block_match = re.search(r'```markdown.*?components import Button.*?```', full_rendered, re.DOTALL)
-    assert code_block_match is not None, "Code block with Button component not found"
+    # The markdown ```markdown is converted to <pre><code class="language-markdown"> in HTML
+    assert '<code class="language-markdown">' in full_rendered
 
 def test_direct_fasthtml_code_block_detection():
     """

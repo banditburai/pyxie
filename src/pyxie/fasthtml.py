@@ -86,8 +86,6 @@ def map_exception_to_fasthtml_error(exception: Exception, context: str) -> FastH
     else:
         return FastHTMLError(error_message)
 
-# ---- Utility Functions ----
-
 # ---- Content Detection ----
 
 def is_fasthtml_content(content: str) -> bool:
@@ -344,18 +342,27 @@ def process_tag(tag_match: FastHTMLTagMatch, context_path: Optional[str] = None)
     """Process a single FastHTML tag match."""
     # If it's direct HTML, return it as-is
     if is_direct_html_content(tag_match.content):
-        return Result.success(tag_match.content)    
+        return Result.success(tag_match.content)
     
-    # Extract executable content if needed
+    # Get content and check if it's executable
+    content = tag_match.content
+    
+    # Only extract and execute if it has the executable marker
     if is_executable_fasthtml(content):
+        # Extract the executable content without the marker
         content = extract_executable_content(content)
         tag_match.content = content
         log(logger, "FastHTML", "info", "process", "Executing FastHTML tag")
+        
+        # Execute the code and chain operations: execute -> render -> protect script tags
+        return (execute_fasthtml_code(content, context_path)
+                .map(lambda components: render_components(components, tag_match.description))
+                .map(protect_script_tags))
     
-    # Execute the code and chain operations: execute -> render -> protect script tags
-    return (execute_fasthtml_code(content, context_path)
-            .map(lambda components: render_components(components, tag_match.description))
-            .map(protect_script_tags))
+    # For non-executable content, just return it as-is
+    # This should generally not happen with our new flow
+    log(logger, "FastHTML", "warning", "process", "Non-executable FastHTML tag received in process_tag")
+    return Result.success(content)
 
 @catch_errors("process")
 def execute_raw_code_block(content: str, context_path: Optional[str] = None) -> Result[str]:
@@ -387,7 +394,7 @@ def process_multiple_fasthtml_tags(
         result = process_tag(tags[0], context_path)
         return result.content if result.is_success else format_error_html(result.error)
     
-    # Normal processing for actual FastHTML tags to execute
+    # Process all FastHTML tags
     try:
         processed = FASTHTML_TAG_PATTERN.sub(replace_tag, content)
         return Result.success(processed)
@@ -419,16 +426,9 @@ def process_single_fasthtml_block(content: str, context_path: Optional[str] = No
             # If no FastHTML tag is found, try to execute the content directly
             return execute_raw_code_block(extracted_content, context_path)
     
-    # Try to parse as a FastHTML tag
-    tags = parse_fasthtml_tags(content, first_only=True)
-    if tags:
-        return process_tag(tags[0], context_path)
-    
-    # Handle direct HTML content
-    if is_direct_html_content(content):
-        return Result.success(content)
-    
-    # Default: return as plain text
+    # For non-executable content, just return it as-is
+    # This should generally not happen with our new flow
+    log(logger, "FastHTML", "warning", "process", "Non-executable FastHTML content received in process_single_fasthtml_block")
     return Result.success(content)
 
 @catch_errors("render")
@@ -441,9 +441,9 @@ def render_fasthtml(
     # Quick check for empty content
     if not content:
         return ("", []) if return_errors else ""
-        
-    # Not FastHTML content, return as is
-    if not is_fasthtml_content(content):
+    
+    # Not FastHTML content or not marked for execution, return as is
+    if not is_fasthtml_content(content) or EXECUTABLE_MARKER not in content:
         return (content, []) if return_errors else content
     
     # Process content based on its structure
