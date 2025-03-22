@@ -131,8 +131,6 @@ def render_block(block: ContentBlock, cache: Optional[CacheProtocol] = None) -> 
                 return RenderResult(content="")
             attr_str = " ".join(f'{k}="{v}"' for k, v in block.params.items())
             return RenderResult(content=f"<script {attr_str}></script>")
-        if block.content_type == "ft":
-            return RenderResult(content=block.content)
         
         # Handle empty content
         if not block.content.strip():
@@ -140,15 +138,22 @@ def render_block(block: ContentBlock, cache: Optional[CacheProtocol] = None) -> 
         
         content = block.content
         
-        # Process executable FastHTML content
+        # Debug log for investigation
+        log(logger, "Renderer", "debug", "fasthtml", 
+            f"Block: {block.name}, Type: {block.content_type}, " 
+            f"Is executable: {is_executable_fasthtml(content)}, "
+            f"Is fasthtml: {is_fasthtml_content(content)}")
+            
+        # Process executable FastHTML content - THIS MUST BE CHECKED FIRST
         if is_executable_fasthtml(content):
+            log(logger, "Renderer", "debug", "fasthtml", f"Processing executable FastHTML in block {block.name}")
             # Use process_single_fasthtml_block which handles executable content correctly
             result = process_single_fasthtml_block(content)
             if result.is_success:
                 return RenderResult(content=result.content)
             else:
                 return RenderResult(error=str(result.error))
-        
+
         # Handle regular FastHTML content (non-executable)
         if is_fasthtml_content(content):
             log(logger, "Renderer", "info", "fasthtml", f"Detected non-executable FastHTML content in block {block.name}, rendering as markdown")

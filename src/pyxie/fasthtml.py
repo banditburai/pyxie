@@ -415,20 +415,30 @@ def process_single_fasthtml_block(content: str, context_path: Optional[str] = No
         # Extract the content without the marker
         extracted_content = extract_executable_content(content)
         
-        # Parse the extracted content to get the FastHTML tag
+        # Try to find and extract FastHTML tags first
         extracted_tags = parse_fasthtml_tags(extracted_content, first_only=True)
+        
         if extracted_tags:
-            # Extract only the inner content of the FastHTML tag
+            # Found valid tags - execute the inner content
             inner_content = extracted_tags[0].content
-            # Execute the inner content directly
+            log(logger, "FastHTML", "debug", "process", f"Executing inner content of FastHTML tag: {inner_content[:100]}...")
             return execute_raw_code_block(inner_content, context_path)
-        else:
-            # If no FastHTML tag is found, try to execute the content directly
-            return execute_raw_code_block(extracted_content, context_path)
+        
+        # No tags found or invalid tags - look for show() function as direct code
+        if "show(" in extracted_content:
+            log(logger, "FastHTML", "info", "process", "No valid FastHTML tags found, executing as direct code")
+            # Filter out any HTML-like lines that might cause syntax errors
+            code_lines = [line for line in extracted_content.splitlines() 
+                        if not (line.strip().startswith("<") and ">" in line)]
+            code_to_execute = "\n".join(code_lines)
+            return execute_raw_code_block(code_to_execute, context_path)
+            
+        # Last resort - try to execute the whole content
+        log(logger, "FastHTML", "warning", "process", "Attempting to execute entire content block")
+        return execute_raw_code_block(extracted_content, context_path)
     
     # For non-executable content, just return it as-is
-    # This should generally not happen with our new flow
-    log(logger, "FastHTML", "warning", "process", "Non-executable FastHTML content received in process_single_fasthtml_block")
+    log(logger, "FastHTML", "warning", "process", "Non-executable FastHTML content received")
     return Result.success(content)
 
 @catch_errors("render")

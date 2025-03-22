@@ -11,6 +11,7 @@ from pyxie.fasthtml import process_single_fasthtml_block, EXECUTABLE_MARKER
 import fasthtml.common as ft_common
 from pyxie.parser import find_content_blocks, find_code_blocks
 from pyxie.renderer import render_block
+from pyxie.layouts import registry
 
 # Add these components for the tests to work with ft_common namespace
 Div = ft_common.Div
@@ -199,6 +200,131 @@ show(Div("Second component", cls="second"))
             assert 'class="second"' in result.content, "Second component not rendered"
 
 
+def test_fasthtml_with_content_type_ft():
+    """Test that FastHTML blocks with content_type='ft' are still properly executed."""
+    from pyxie.types import ContentBlock
+    from pyxie.renderer import render_block
+    
+    # Create a FastHTML block with content_type="ft"
+    content = EXECUTABLE_MARKER + """<fasthtml>
+show(Div("This should execute even with ft content type", cls="test-ft-div"))
+</fasthtml>"""
+    
+    # Create the content block with content_type="ft"
+    block = ContentBlock(
+        name="fasthtml",
+        content=content,
+        content_type="ft",  # This is the key part - setting content_type to "ft"
+        params={},
+        index=0
+    )
+    
+    # Render the block
+    result = render_block(block)
+    
+    # Check that it executed properly despite the content_type
+    assert result.success, f"Rendering failed: {result.error}"
+    assert '<div class="test-ft-div">' in result.content, "Div not rendered correctly"
+    assert 'show(' not in result.content, "Raw show() function call found in output"
+
+
+def test_integrated_fasthtml_parsing_and_rendering():
+    """Test the full integration path from parsing markdown to rendering FastHTML."""
+    from pyxie.parser import find_content_blocks, find_code_blocks
+    from pyxie.types import ContentBlock
+    from pyxie.renderer import render_block
+    from pyxie.fasthtml import EXECUTABLE_MARKER
+
+    # Create a FastHTML block with executable marker
+    fasthtml_content = EXECUTABLE_MARKER + """<fasthtml>
+show(Div("This is a FastHTML component in content", cls="integration-test"))
+</fasthtml>"""
+
+    # Create a ContentBlock directly
+    block = ContentBlock(
+        name="fasthtml",
+        content=fasthtml_content,
+        content_type="markdown",  # Use markdown content type
+        params={},
+        index=0
+    )
+    
+    # Render the block directly
+    result = render_block(block)
+    
+    # Verify the rendering was successful
+    assert result.success, f"FastHTML block rendering failed: {result.error}"
+    
+    # Check that it rendered the component correctly
+    assert '<div class="integration-test">' in result.content, "FastHTML component not found in rendered output"
+    assert 'show(' not in result.content, "Raw FastHTML code found in rendered output"
+
+
+def test_content_block_type_rendering():
+    """Test how different content_type values affect FastHTML execution."""
+    from pyxie.types import ContentBlock
+    from pyxie.renderer import render_block
+    
+    # Get a basic executable FastHTML content block
+    base_content = EXECUTABLE_MARKER + """<fasthtml>
+show(Div("This is test content", cls="test-type-div"))
+</fasthtml>"""
+    
+    # Test various content_type values that might be set during parsing
+    content_types = ["", None, "md", "markdown", "html", "ft"]
+    
+    for ct in content_types:
+        # Create a block with each content type
+        block = ContentBlock(
+            name="fasthtml",
+            content=base_content,
+            content_type=ct,
+            params={},
+            index=0
+        )
+        
+        # Render the block and check the result
+        result = render_block(block)
+        assert result.success, f"Rendering failed with content_type={ct}: {result.error}"
+        assert '<div class="test-type-div">' in result.content, f"Div not rendered correctly with content_type={ct}"
+        assert 'show(' not in result.content, f"Raw show() call found in output with content_type={ct}"
+
+
+def test_problematic_fasthtml_formats():
+    """Test handling of problematic FastHTML formats that might occur in real-world usage."""
+    from pyxie.fasthtml import process_single_fasthtml_block, EXECUTABLE_MARKER
+    
+    # Test case 1: Content with the marker but without proper <fasthtml> tags
+    # This simulates a case where the parser added the marker but tags were altered
+    content1 = EXECUTABLE_MARKER + """
+show(Div("This should still execute even without proper tags", cls="test-problematic"))
+"""
+    
+    result1 = process_single_fasthtml_block(content1)
+    assert result1.is_success, f"Failed to process content without tags: {result1.error}"
+    assert '<div class="test-problematic">' in result1.content, "Component not rendered correctly"
+    
+    # Test case 2: Content with the marker and malformed tags
+    content2 = EXECUTABLE_MARKER + """<fasthtml>
+show(Div("This has malformed tags", cls="test-malformed"))
+</Fasthtml>"""  # Note the capitalization mismatch
+    
+    result2 = process_single_fasthtml_block(content2)
+    assert result2.is_success, f"Failed to process content with malformed tags: {result2.error}"
+    assert '<div class="test-malformed">' in result2.content, "Component not rendered with malformed tags"
+    
+    # Test case 3: Content with extra text outside the tags
+    content3 = EXECUTABLE_MARKER + """Some text before
+<fasthtml>
+show(Div("This has text outside tags", cls="test-outside"))
+</fasthtml>
+Some text after"""
+    
+    result3 = process_single_fasthtml_block(content3)
+    assert result3.is_success, f"Failed to process content with text outside tags: {result3.error}"
+    assert '<div class="test-outside">' in result3.content, "Component not rendered with outside text"
+
+
 if __name__ == "__main__":
     test_simple_component()
     test_nested_components()
@@ -208,4 +334,8 @@ if __name__ == "__main__":
     test_bar_chart()
     test_fasthtml_execution_in_content()
     test_multiple_fasthtml_blocks_execution()
+    test_fasthtml_with_content_type_ft()
+    test_integrated_fasthtml_parsing_and_rendering()
+    test_content_block_type_rendering()
+    test_problematic_fasthtml_formats()
     print("All tests passed!") 
