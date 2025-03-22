@@ -38,6 +38,9 @@ FASTHTML_ATTR_PATTERN = re.compile(r'(\w+)=(["\'])(.*?)\2', re.DOTALL)
 IMPORT_PATTERN = re.compile(r'^(?:from\s+([^\s]+)\s+import|import\s+([^#\n]+))', re.MULTILINE)
 SCRIPT_TAG_PATTERN = re.compile(r'(<script[^>]*>)(.*?)(</script>)', re.DOTALL)
 
+# New constant for the execution marker
+EXECUTABLE_MARKER = "__EXECUTABLE_FASTHTML__"
+
 @dataclass
 class FastHTMLTagMatch:
     """Parsed FastHTML tag."""
@@ -103,6 +106,16 @@ def is_single_complete_tag(content: str) -> bool:
     return (content and isinstance(content, str) and 
             content.strip().startswith('<') and 
             bool(FASTHTML_TAG_PATTERN.match(content.strip())))
+
+def is_executable_fasthtml(content: str) -> bool:
+    """Check if content has been marked as executable by the parser."""
+    return content and isinstance(content, str) and content.startswith(EXECUTABLE_MARKER)
+
+def extract_executable_content(content: str) -> str:
+    """Extract the executable content from marked content."""
+    if is_executable_fasthtml(content):
+        return content[len(EXECUTABLE_MARKER):]
+    return content
 
 # ---- Tag Parsing ----
 
@@ -328,16 +341,25 @@ def escape_fasthtml_content(content: str) -> str:
 
 @catch_errors("process")
 def process_tag(tag_match: FastHTMLTagMatch, context_path: Optional[str] = None) -> Result[str]:
-    """
-    Process a single FastHTML tag match.
-    This is the core execution function that takes a parsed tag and produces rendered output.
-    """
+    """Process a single FastHTML tag match."""
     # If it's direct HTML, return it as-is
     if is_direct_html_content(tag_match.content):
         return Result.success(tag_match.content)
     
+    # Check if this content has been marked as executable by the parser
+    content = tag_match.content
+    if tag_match.tag_name.lower() == 'fasthtml' and not is_executable_fasthtml(content):
+        # Not marked as executable - return as plain text without escaping
+        return Result.success(content)
+    
+    # Extract executable content if needed
+    if is_executable_fasthtml(content):
+        content = extract_executable_content(content)
+        tag_match.content = content
+        log(logger, "FastHTML", "info", "process", "Executing FastHTML tag")
+    
     # Execute the code and chain operations: execute -> render -> protect script tags
-    return (execute_fasthtml_code(tag_match.content, context_path)
+    return (execute_fasthtml_code(content, context_path)
             .map(lambda components: render_components(components, tag_match.description))
             .map(protect_script_tags))
 
@@ -371,35 +393,49 @@ def process_multiple_fasthtml_tags(
         result = process_tag(tags[0], context_path)
         return result.content if result.is_success else format_error_html(result.error)
     
-    # Process and return in one step
-    return Result.success(FASTHTML_TAG_PATTERN.sub(replace_tag, content))
+    # Normal processing for actual FastHTML tags to execute
+    try:
+        processed = FASTHTML_TAG_PATTERN.sub(replace_tag, content)
+        return Result.success(processed)
+    except Exception as e:
+        error = map_exception_to_fasthtml_error(e, "processing")
+        log(logger, "FastHTML", "error", "process", str(error))
+        return Result.error(error)
 
 @catch_errors("process")
-def process_single_fasthtml_block(
-    content: str, 
-    context_path: Optional[str] = None,    
-) -> Result[str]:
-    """
-    Process a single FastHTML block or raw code.
-    Handles a complete FastHTML tag or raw code block, returning rendered output.
-    """
-    # Check for empty content
+def process_single_fasthtml_block(content: str, context_path: Optional[str] = None) -> Result[str]:
+    """Process a single FastHTML block or raw code."""
     if not content:
-        log(logger, "FastHTML", "warning", "process", "Empty content")
         return Result.success("")
+    
+    # Check for executable marker first - this takes priority
+    if is_executable_fasthtml(content):
+        log(logger, "FastHTML", "info", "process", "Executing marked FastHTML code")
+        # Extract the content without the marker
+        extracted_content = extract_executable_content(content)
+        
+        # Parse the extracted content to get the FastHTML tag
+        extracted_tags = parse_fasthtml_tags(extracted_content, first_only=True)
+        if extracted_tags:
+            # Extract only the inner content of the FastHTML tag
+            inner_content = extracted_tags[0].content
+            # Execute the inner content directly
+            return execute_raw_code_block(inner_content, context_path)
+        else:
+            # If no FastHTML tag is found, try to execute the content directly
+            return execute_raw_code_block(extracted_content, context_path)
     
     # Try to parse as a FastHTML tag
     tags = parse_fasthtml_tags(content, first_only=True)
-    
     if tags:
-        # Process the parsed tag
         return process_tag(tags[0], context_path)
-    elif is_direct_html_content(content):
-        # Pass through direct HTML content
+    
+    # Handle direct HTML content
+    if is_direct_html_content(content):
         return Result.success(content)
-    else:
-        # Treat as raw FastHTML code
-        return execute_raw_code_block(content, context_path)
+    
+    # Default: return as plain text
+    return Result.success(content)
 
 @catch_errors("render")
 def render_fasthtml(

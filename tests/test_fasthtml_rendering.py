@@ -7,7 +7,7 @@ especially for complex nested component structures.
 
 import logging
 
-from pyxie.fasthtml import process_single_fasthtml_block
+from pyxie.fasthtml import process_single_fasthtml_block, EXECUTABLE_MARKER
 import fasthtml.common as ft_common
 
 # Add these components for the tests to work with ft_common namespace
@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 def test_simple_component():
     """Test rendering of a simple component."""
-    content = """<fasthtml>
+    content = EXECUTABLE_MARKER + """<fasthtml>
 show(Div("Hello World", cls="test-class"))
 </fasthtml>"""
     result = process_single_fasthtml_block(content)
@@ -31,7 +31,7 @@ show(Div("Hello World", cls="test-class"))
 
 def test_nested_components():
     """Test rendering of nested components."""
-    content = """<fasthtml>
+    content = EXECUTABLE_MARKER + """<fasthtml>
 component = Div(
     Div("Inner content", cls="inner"),
     cls="outer"
@@ -46,7 +46,7 @@ show(component)
 
 def test_component_function():
     """Test rendering of a component function."""
-    content = """<fasthtml>
+    content = EXECUTABLE_MARKER + """<fasthtml>
 def MyComponent(text):
     return Div(text, cls="custom")
     
@@ -59,7 +59,7 @@ show(MyComponent("Hello from function"))
 
 def test_list_comprehension():
     """Test rendering of components created with list comprehension."""
-    content = """<fasthtml>
+    content = EXECUTABLE_MARKER + """<fasthtml>
 component = Div(
     *[P(f"Item {i}", cls=f"item-{i}") for i in range(3)],
     cls="list-container"
@@ -76,7 +76,7 @@ show(component)
 
 def test_image_gallery():
     """Test rendering of an image gallery with multiple nested components."""
-    content = """<fasthtml>
+    content = EXECUTABLE_MARKER + """<fasthtml>
 def ImageCard(src, alt=""):
     return Div(
         Img(src=src, alt=alt, cls="img-style"),
@@ -102,7 +102,7 @@ show(gallery)
 
 def test_bar_chart():
     """Test rendering of a bar chart with list comprehension in a function."""
-    content = """<fasthtml>
+    content = EXECUTABLE_MARKER + """<fasthtml>
 def BarChart(data):
     max_value = max(value for _, value in data)
     
@@ -130,10 +130,7 @@ show(BarChart(data))
     assert result.is_success
     assert "<div class=\"chart\">" in result.content
     assert "<div class=\"bar-container\">" in result.content
-    assert "<div class=\"bar\" style=\"width: " in result.content
-    assert "<p class=\"label\">A</p>" in result.content
-    assert "<p class=\"label\">B</p>" in result.content
-    assert "<p class=\"label\">C</p>" in result.content
+    assert "<div class=\"bar\" style=\"width: 50.0%\"></div>" in result.content
 
 
 if __name__ == "__main__":

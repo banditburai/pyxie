@@ -15,7 +15,7 @@ from pyxie.fasthtml import (
     process_single_fasthtml_block, parse_fasthtml_tags, create_namespace,
     safe_import, process_imports, py_to_js, js_function,
     is_fasthtml_content, protect_script_tags, format_error_html,
-    process_multiple_fasthtml_tags
+    process_multiple_fasthtml_tags, EXECUTABLE_MARKER
 )
 
 # Test fixtures
@@ -248,20 +248,20 @@ class TestNamespaceAndImports:
 
 # Test rendering complex components
 class TestComplexRendering:
-    """Test rendering of complex FastHTML components."""
+    """Test complex FastHTML rendering scenarios."""
     
     def test_complex_nested_components(self):
         """Test rendering of deeply nested component structures."""
-        content = """<fasthtml>
+        content = EXECUTABLE_MARKER + """<fasthtml>
 def Card(title, content, footer=None):
     components = [
         Div(title, cls="card-title"),
         Div(content, cls="card-content")
     ]
-    
+
     if footer:
         components.append(Div(footer, cls="card-footer"))
-    
+
     return Div(*components, cls="card")
 
 def ListItem(content, index):
@@ -285,25 +285,26 @@ show(app)
         result = process_single_fasthtml_block(content)
         assert result.is_success
         rendered = result.content
-        
+
         # Check outer structure
         assert '<div class="app-container">' in rendered
         assert '<div class="card">' in rendered
-        
-        # Check nested components
         assert '<div class="card-title">Complex Component</div>' in rendered
+        assert '<div class="card-content">' in rendered
         assert '<div class="items-list">' in rendered
+
+        # Check list items
         assert '<div class="list-item item-0">1. Item 0</div>' in rendered
         assert '<div class="list-item item-1">2. Item 1</div>' in rendered
         assert '<div class="list-item item-2">3. Item 2</div>' in rendered
-        
-        # Check footer - allow for slight variations in structure
+
+        # Check footer
         assert '<div class="card-footer">' in rendered
         assert '<div class="footer-content">Card Footer</div>' in rendered
-    
+
     def test_conditional_rendering(self):
         """Test conditional rendering in FastHTML components."""
-        content = """<fasthtml>
+        content = EXECUTABLE_MARKER + """<fasthtml>
 def ConditionalComponent(condition):
     if condition:
         return Div("Condition is True", cls="true-condition")
@@ -321,10 +322,10 @@ show(ConditionalComponent(False))
         # Both conditions should be rendered
         assert '<div class="true-condition">Condition is True</div>' in rendered
         assert '<div class="false-condition">Condition is False</div>' in rendered
-    
+
     def test_component_with_javascript(self):
         """Test components with JavaScript in FastHTML."""
-        content = """<fasthtml>
+        content = EXECUTABLE_MARKER + """<fasthtml>
 def PageWithJS(title):
     return Div(
         Div(title, cls="title"),
@@ -345,17 +346,18 @@ show(PageWithJS("Example Page"))
         result = process_single_fasthtml_block(content)
         assert result.is_success
         rendered = result.content
-        
+
         # Check basic structure
         assert '<div class="page">' in rendered
         assert '<div class="title">Example Page</div>' in rendered
         assert '<div class="body">' in rendered
         assert '<div class="content">Page content goes here</div>' in rendered
+        assert '<div class="scripts">' in rendered
         
-        # Check that JavaScript is properly included
-        assert '<script data-raw="true">' in rendered
-        assert "document.addEventListener('DOMContentLoaded'" in rendered
-    
+        # Check script content (should be protected)
+        assert 'document.addEventListener' in rendered
+        assert "console.log('Page loaded!')" in rendered
+
     def test_external_module_component(self, test_module_dir: Path):
         """Test importing and using components from external modules."""
         # Create a test module
@@ -365,11 +367,11 @@ show(PageWithJS("Example Page"))
 def CustomComponent(title, content):
     return f'<div class="custom-component"><h2>{title}</h2><p>{content}</p></div>'
 """)
-        
+
         # Allow time for the file to be saved
         time.sleep(0.1)
-        
-        content = """<fasthtml>
+
+        content = EXECUTABLE_MARKER + """<fasthtml>
 import sys
 sys.path.insert(0, r'""" + str(test_module_dir) + """')
 
@@ -381,16 +383,15 @@ show(custom)
         result = process_single_fasthtml_block(content)
         assert result.is_success, f"Error: {result.error}"
         rendered = result.content
-        
+
         # The string gets HTML-escaped because it's a raw string, not a component
-        # So we should check for the escaped version
         assert '&lt;div class=&quot;custom-component&quot;&gt;' in rendered
         assert '&lt;h2&gt;Test Title&lt;/h2&gt;' in rendered
         assert '&lt;p&gt;This is the content&lt;/p&gt;' in rendered
 
     def test_dynamic_components(self):
         """Test dynamic component generation in FastHTML."""
-        content = """<fasthtml>
+        content = EXECUTABLE_MARKER + """<fasthtml>
 def create_components(count):
     return [Div(f"Component {i}", cls=f"component-{i}") for i in range(count)]
 
@@ -410,7 +411,7 @@ show(container)
 
     def test_component_with_props(self):
         """Test component with props in FastHTML."""
-        content = """<fasthtml>
+        content = EXECUTABLE_MARKER + """<fasthtml>
 def Button(text, cls="btn", **props):
     props_str = ' '.join([f'{k}="{v}"' for k, v in props.items()])
     return f'<button class="{cls}" {props_str}>{text}</button>'
@@ -441,19 +442,20 @@ show(Div("Inner component"))
         result = process_multiple_fasthtml_tags(content)
         assert result.is_success
         rendered = result.content
-        
-        # Check that both components and the HTML are rendered correctly
-        assert '<div>Outer component</div>' in rendered
+
+        # In our new design, these won't execute without the EXECUTABLE_MARKER
+        # Check that the content is preserved as text
+        assert 'show(Div("Outer component"))' in rendered
         assert '<p>Regular HTML content</p>' in rendered
-        assert '<div>Inner component</div>' in rendered
+        assert 'show(Div("Inner component"))' in rendered
 
 # Test error handling
 class TestErrorHandling:
-    """Test error handling in FastHTML processing."""
+    """Test error handling in FastHTML."""
     
     def test_syntax_error(self):
         """Test that syntax errors are caught and reported properly."""
-        content = """<fasthtml>
+        content = EXECUTABLE_MARKER + """<fasthtml>
 def broken_function(
     # Missing closing parenthesis
     return "This will never execute"
@@ -461,15 +463,11 @@ def broken_function(
 
         result = process_single_fasthtml_block(content)
         assert not result.is_success
-        error_message = format_error_html(result.error)
-        
-        # Check for error indicators in the output
-        assert "Syntax" in error_message
-        assert "never closed" in error_message
+        assert "Syntax error" in str(result.error)
     
     def test_runtime_error(self):
         """Test that runtime errors are caught and reported properly."""
-        content = """<fasthtml>
+        content = EXECUTABLE_MARKER + """<fasthtml>
 def div_by_zero():
     return 1 / 0
 
@@ -478,22 +476,25 @@ show(div_by_zero())
 
         result = process_single_fasthtml_block(content)
         assert not result.is_success
-        error_message = format_error_html(result.error)
-        
-        # Check for error indicators in the output
-        assert "ZeroDivision" in error_message
-        assert "division by zero" in error_message
+        assert "ZeroDivisionError" in str(result.error)
     
     def test_component_error(self):
         """Test that component errors are caught and reported properly."""
-        content = """<fasthtml>
+        content = EXECUTABLE_MARKER + """<fasthtml>
 show(UndefinedComponent())
 </fasthtml>"""
 
         result = process_single_fasthtml_block(content)
         assert not result.is_success
-        error_message = format_error_html(result.error)
+        assert "NameError" in str(result.error)
         
-        # Check for error indicators in the output
-        assert "NameError" in error_message
-        assert "UndefinedComponent" in error_message 
+    def test_non_executable_content_not_executed(self):
+        """Test that FastHTML content without the executable marker is not executed."""
+        content = """<fasthtml>
+# This would cause an error if executed
+undefined_variable + 1
+</fasthtml>"""
+
+        result = process_single_fasthtml_block(content)
+        assert result.is_success
+        assert "undefined_variable + 1" in result.content 

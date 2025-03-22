@@ -279,24 +279,37 @@ def _process_tag_match(content: str,
              for pos in range(start_pos, closing_pos, max(1, (closing_pos - start_pos) // 5))))
     )
     
-    # If the tag is in a code block and it's a FastHTML tag, escape its contents
-    # to ensure it doesn't get executed later in the pipeline
-    if is_in_code and tag_name.lower() in FASTHTML_BLOCK_NAMES:
-        # Escape the angle brackets inside the content to prevent execution
-        escaped_content = block_content.replace("<", "&lt;").replace(">", "&gt;")
-        
-        # Log that we're escaping this FastHTML content
-        log(logger, "Parser", "info", "blocks", 
-            f"Escaping FastHTML content in code block at line {open_line}", 
-            Path(filename) if filename else None)
-        
-        # Create content block with escaped content
-        return _create_content_block(
-            tag_name, 
-            escaped_content, 
-            params_str, 
-            0  # Index will be set by the caller
-        )
+    # Special handling for FastHTML tags
+    if tag_name.lower() == 'fasthtml':
+        if is_in_code:
+            # This is in a code block - keep as plain text (escape it)
+            escaped_content = block_content.replace("<", "&lt;").replace(">", "&gt;")
+            
+            log(logger, "Parser", "info", "blocks", 
+                f"Escaping FastHTML content in code block at line {open_line}", 
+                Path(filename) if filename else None)
+            
+            return _create_content_block(
+                tag_name, 
+                escaped_content, 
+                params_str, 
+                0  # Index will be set by the caller
+            )
+        else:
+            # NOT in a code block - mark for execution with special wrapper
+            # We wrap the content in a special marker that fasthtml.py will recognize
+            executable_content = f"__EXECUTABLE_FASTHTML__{block_content}"
+            
+            log(logger, "Parser", "info", "blocks", 
+                f"Marking FastHTML content for execution at line {open_line}", 
+                Path(filename) if filename else None)
+            
+            return _create_content_block(
+                tag_name, 
+                executable_content, 
+                params_str, 
+                0  # Index will be set by the caller
+            )
     
     # Create content block
     return _create_content_block(
