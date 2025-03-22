@@ -20,7 +20,7 @@ This module contains general-purpose utilities used across the package.
 import logging
 from typing import Dict, Optional, Any, List, Union, Callable, Tuple, Iterator
 from html import escape
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 import hashlib
 import importlib.util
@@ -324,7 +324,7 @@ def convert_value(value: str) -> Any:
     # Handle lists
     if value.startswith('[') and value.endswith(']'):
         return [v.strip(' "\'') for v in value[1:-1].split(',') if v.strip()]
-    
+        
     # Handle other types
     match value.lower():
         case 'true' | 'yes':
