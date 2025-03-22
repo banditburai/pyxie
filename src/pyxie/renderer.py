@@ -73,6 +73,28 @@ class PyxieHTMLRenderer(HTMLRenderer):
         """Render heading with automatic ID generation."""
         inner = self.render_inner(token)
         return f'<h{token.level} id="{self._make_id(inner)}">{inner}</h{token.level}>'
+    
+    def render_code_block(self, token):
+        """Override code block rendering to ensure FastHTML tags are escaped."""
+        # Escape any FastHTML tags in the code
+        content = token.children[0].content
+        # Escape tags like <fasthtml> and </fasthtml>
+        content = re.sub(r'<(/?)(fasthtml|ft)(\s|>)', r'&lt;\1\2\3', content)
+        # Also escape self-closing tags like <fasthtml/>
+        content = re.sub(r'<(fasthtml|ft)(\s[^>]*)?/>', r'&lt;\1\2/&gt;', content)
+        
+        if token.language:
+            return f'<pre><code class="language-{token.language}">{content}</code></pre>'
+        return f'<pre><code>{content}</code></pre>'
+    
+    def render_inline_code(self, token):
+        """Override inline code rendering to ensure FastHTML tags are escaped."""
+        # Escape any FastHTML tags in the inline code
+        content = escape(token.children[0].content)
+        # Double-check FastHTML tags are escaped
+        content = re.sub(r'<(/?)(fasthtml|ft)(\s|>)', r'&lt;\1\2\3', content)
+        content = re.sub(r'<(fasthtml|ft)(\s[^>]*)?/>', r'&lt;\1\2/&gt;', content)
+        return f'<code>{content}</code>'
         
     def render_image(self, token) -> str:
         """Custom image rendering with placeholder support."""
