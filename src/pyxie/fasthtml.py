@@ -344,13 +344,7 @@ def process_tag(tag_match: FastHTMLTagMatch, context_path: Optional[str] = None)
     """Process a single FastHTML tag match."""
     # If it's direct HTML, return it as-is
     if is_direct_html_content(tag_match.content):
-        return Result.success(tag_match.content)
-    
-    # Check if this content has been marked as executable by the parser
-    content = tag_match.content
-    if tag_match.tag_name.lower() == 'fasthtml' and not is_executable_fasthtml(content):
-        # Not marked as executable - return as plain text without escaping
-        return Result.success(content)
+        return Result.success(tag_match.content)    
     
     # Extract executable content if needed
     if is_executable_fasthtml(content):
