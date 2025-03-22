@@ -9,6 +9,8 @@ import logging
 
 from pyxie.fasthtml import process_single_fasthtml_block, EXECUTABLE_MARKER
 import fasthtml.common as ft_common
+from pyxie.parser import find_content_blocks, find_code_blocks
+from pyxie.renderer import render_block
 
 # Add these components for the tests to work with ft_common namespace
 Div = ft_common.Div
@@ -133,6 +135,70 @@ show(BarChart(data))
     assert "<div class=\"bar\" style=\"width: 50.0%\"></div>" in result.content
 
 
+def test_fasthtml_execution_in_content():
+    """Test that FastHTML blocks are properly executed and rendered in content."""
+    # Create test content with FastHTML - using the components already imported
+    test_content = EXECUTABLE_MARKER + """<fasthtml>
+# Use Button component that's already imported in this test file
+show(Button("Click me", cls="test-button"))
+</fasthtml>"""
+    
+    # Render the block
+    result = process_single_fasthtml_block(test_content)
+    
+    # The rendered content should be successful
+    assert result.is_success, f"Rendering failed: {result.error}"
+    
+    # The rendered content should contain the button but not the show() function call
+    assert 'class="test-button"' in result.content, "Button not rendered"
+    assert '<button' in result.content, "Button element not found"
+    assert 'show(' not in result.content, "Raw show() function call found in output"
+
+
+def test_multiple_fasthtml_blocks_execution():
+    """Test execution of multiple FastHTML blocks in a single content."""
+    # Test with properly formatted content for a single block first
+    from pyxie.parser import find_content_blocks, find_code_blocks
+    from pyxie.renderer import render_block
+    
+    # Create markdown content with two FastHTML blocks
+    markdown_content = """
+# Test Page with Multiple FastHTML Blocks
+
+<fasthtml>
+show(Div("First component", cls="first"))
+</fasthtml>
+
+Some regular markdown content in between the blocks.
+
+<fasthtml>
+show(Div("Second component", cls="second"))
+</fasthtml>
+"""
+    
+    # Find code blocks first (required for the parser)
+    code_blocks = find_code_blocks(markdown_content)
+    
+    # Parse the content to find blocks
+    blocks = find_content_blocks(markdown_content, warn_unclosed=False)
+    fasthtml_blocks = blocks.get('fasthtml', [])
+    
+    # There should be two fasthtml blocks
+    assert len(fasthtml_blocks) == 2, f"Expected 2 FastHTML blocks, found {len(fasthtml_blocks)}"
+    
+    # Render each block and check the output
+    for i, block in enumerate(fasthtml_blocks):
+        result = render_block(block)
+        assert result.success, f"Failed to render block {i}: {result.error}"
+        assert 'show(' not in result.content, f"Block {i} contains raw show() call"
+        
+        # Check for specific content in each block
+        if i == 0:
+            assert 'class="first"' in result.content, "First component not rendered"
+        elif i == 1:
+            assert 'class="second"' in result.content, "Second component not rendered"
+
+
 if __name__ == "__main__":
     test_simple_component()
     test_nested_components()
@@ -140,4 +206,6 @@ if __name__ == "__main__":
     test_list_comprehension()
     test_image_gallery()
     test_bar_chart()
+    test_fasthtml_execution_in_content()
+    test_multiple_fasthtml_blocks_execution()
     print("All tests passed!") 

@@ -442,16 +442,24 @@ def render_fasthtml(
     if not content:
         return ("", []) if return_errors else ""
     
-    # Not FastHTML content or not marked for execution, return as is
-    if not is_fasthtml_content(content) or EXECUTABLE_MARKER not in content:
-        return (content, []) if return_errors else content
+    # Check if this is executable FastHTML content
+    if is_executable_fasthtml(content):
+        # Process content with process_single_fasthtml_block which handles the executable marker
+        result = process_single_fasthtml_block(content, context_path)
+        # Return appropriate format based on return_errors flag
+        return (
+            (result.content, []) if result.is_success else ("", [str(result.error)])
+        ) if return_errors else (
+            result.content if result.is_success else format_error_html(result.error)
+        )
     
-    # Process content based on its structure
-    result = (
-        process_single_fasthtml_block(content, context_path) 
-        if is_single_complete_tag(content)
-        else process_multiple_fasthtml_tags(content, context_path)
-    )
+    # Not FastHTML content or not marked for execution, return as is
+    if not is_fasthtml_content(content):
+        return (content, []) if return_errors else content
+        
+    # Process regular FastHTML content (non-executable)
+    log(logger, "FastHTML", "warning", "render", "Non-executable FastHTML content received in render_fasthtml")
+    result = process_multiple_fasthtml_tags(content, context_path)
     
     # Return appropriate format based on return_errors flag
     return (

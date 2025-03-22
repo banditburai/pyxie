@@ -26,7 +26,11 @@ from lxml import html
 
 from .types import ContentBlock, ContentItem
 from .layouts import get_layout
-from .fasthtml import process_multiple_fasthtml_tags, is_fasthtml_content, EXECUTABLE_MARKER, is_executable_fasthtml
+from .fasthtml import (
+    is_fasthtml_content, 
+    EXECUTABLE_MARKER, is_executable_fasthtml,
+    process_single_fasthtml_block
+)
 from .utilities import log, format_error_html
 
 logger = logging.getLogger(__name__)
@@ -134,16 +138,21 @@ def render_block(block: ContentBlock, cache: Optional[CacheProtocol] = None) -> 
         if not block.content.strip():
             return RenderResult(error="Cannot render empty content block")
         
-        # Process executable FastHTML content
         content = block.content
-        if is_fasthtml_content(content) and EXECUTABLE_MARKER in content:
-            # Only send executable FastHTML to fasthtml module
-            result = process_multiple_fasthtml_tags(content)
+        
+        # Process executable FastHTML content
+        if is_executable_fasthtml(content):
+            # Use process_single_fasthtml_block which handles executable content correctly
+            result = process_single_fasthtml_block(content)
             if result.is_success:
                 return RenderResult(content=result.content)
             else:
                 return RenderResult(error=str(result.error))
-            
+        
+        # Handle regular FastHTML content (non-executable)
+        if is_fasthtml_content(content):
+            log(logger, "Renderer", "info", "fasthtml", f"Detected non-executable FastHTML content in block {block.name}, rendering as markdown")
+        
         # Render all other content as markdown
         return RenderResult(content=render_markdown(content))
     except Exception as e:

@@ -11,7 +11,7 @@ from pyxie.renderer import render_block, render_content
 from pyxie.parser import ContentBlock
 from pyxie.layouts import layout
 from pyxie.pyxie import Pyxie
-from pyxie.fasthtml import process_multiple_fasthtml_tags
+from pyxie.fasthtml import process_multiple_fasthtml_tags, render_fasthtml, process_single_fasthtml_block
 
 T = TypeVar('T', bound=FT)
 
@@ -210,10 +210,78 @@ def test_complex_nested_content() -> None:
     assert "List item 2" in result.content
 
 def test_process_fasthtml():
-    """Test processing FastHTML components in content."""
-    valid_html_content = "<fasthtml>show(Div('Hello World'))</fasthtml>"
+    """Test integration with FastHTML rendering."""
+    from pyxie.fasthtml import render_fasthtml, EXECUTABLE_MARKER
+    import fasthtml.common as ft_common
     
-    result = process_multiple_fasthtml_tags(valid_html_content)
+    # Import components for test
+    Div = ft_common.Div
+    
+    # Add the executable marker to the content
+    content = EXECUTABLE_MARKER + """<fasthtml>
+def Greeting(name):
+    return Div(f"Hello, {name}!", cls="greeting")
+show(Greeting("World"))
+</fasthtml>"""
+    
+    result = render_fasthtml(content)
+    assert "<div class=\"greeting\">Hello, World!</div>" in result
+
+def test_fasthtml_in_content_block():
+    """Test that FastHTML blocks in content are properly executed and rendered."""
+    from pyxie.fasthtml import process_single_fasthtml_block, EXECUTABLE_MARKER
+    import fasthtml.common as ft_common
+
+    # Import components for the test to work with ft_common namespace
+    Div = ft_common.Div
+    P = ft_common.P
+    Button = ft_common.Button
+    NotStr = ft_common.NotStr
+
+    # Use the exact same format as a working test
+    content = EXECUTABLE_MARKER + """<fasthtml>
+show(Div("Hello World", cls="test-class"))
+</fasthtml>"""
+    
+    result = process_single_fasthtml_block(content)
+    assert result.is_success
+    assert "<div class=\"test-class\">Hello World</div>" in result.content
+
+def test_render_block_with_fasthtml():
+    """Test the integration between render_block and FastHTML execution."""
+    from pyxie.types import ContentBlock
+    from pyxie.renderer import render_block
+    from pyxie.fasthtml import EXECUTABLE_MARKER
+    import fasthtml.common as ft_common
+
+    # Import components for the test to work with ft_common namespace
+    Div = ft_common.Div
+    P = ft_common.P
+    Button = ft_common.Button
+    NotStr = ft_common.NotStr
+
+    # Create properly formatted FastHTML content with the executable marker
+    content = EXECUTABLE_MARKER + """<fasthtml>
+show(Div("Hello World", cls="test-class"))
+</fasthtml>"""
+    
+    # Create a ContentBlock with the content
+    block = ContentBlock(
+        name="fasthtml",
+        content=content,
+        params={},
+        content_type="markdown",
+        index=0
+    )
+    
+    # Render the block
+    result = render_block(block)
+    
+    # Verify the result
+    assert result.success, f"Rendering failed: {result.error}"
+    assert "<div class=\"test-class\">Hello World</div>" in result.content, "Component not properly rendered"
+    assert "Hello World" in result.content, "Content not properly rendered"
+    assert 'show(' not in result.content, "Raw show() call should not be in output"
 
 def test_layout_rendering() -> None:
     """Test rendering content with layouts."""
