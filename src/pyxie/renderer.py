@@ -138,7 +138,6 @@ def render_block(block: ContentBlock, cache: Optional[CacheProtocol] = None) -> 
         if is_fasthtml_content(block.content):
             result = process_multiple_fasthtml_tags(
                 block.content, 
-                is_escaped=block.is_escaped
             )
             if result.is_success:
                 return RenderResult(content=result.content)

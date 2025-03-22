@@ -85,19 +85,6 @@ def map_exception_to_fasthtml_error(exception: Exception, context: str) -> FastH
 
 # ---- Utility Functions ----
 
-def validate_content(content: str, is_escaped: bool = False) -> Optional[Result[str]]:
-    """
-    Common validation for content processing functions.
-    Returns a Result if validation completes the process, or None to continue processing.
-    """
-    if not content:
-        return Result.success("")
-    
-    if is_escaped:
-        return Result.success(escape_fasthtml_content(content))
-    
-    return None  # Signal to proceed with processing
-
 # ---- Content Detection ----
 
 def is_fasthtml_content(content: str) -> bool:
@@ -364,16 +351,15 @@ def execute_raw_code_block(content: str, context_path: Optional[str] = None) -> 
 @catch_errors("process")
 def process_multiple_fasthtml_tags(
     content: str, 
-    context_path: Optional[str] = None,
-    is_escaped: bool = False
+    context_path: Optional[str] = None,    
 ) -> Result[str]:
     """
     Process all FastHTML tags embedded in content.
     Finds and replaces all FastHTML tags in the content with their rendered output.
     """
-    # Apply common validation
-    if result := validate_content(content, is_escaped):
-        return result
+    # Check for empty content
+    if not content:
+        return Result.success("")
     
     # Process each matching tag
     def replace_tag(match):
@@ -391,20 +377,16 @@ def process_multiple_fasthtml_tags(
 @catch_errors("process")
 def process_single_fasthtml_block(
     content: str, 
-    context_path: Optional[str] = None,
-    is_escaped: bool = False
+    context_path: Optional[str] = None,    
 ) -> Result[str]:
     """
     Process a single FastHTML block or raw code.
     Handles a complete FastHTML tag or raw code block, returning rendered output.
     """
-    # Apply common validation
+    # Check for empty content
     if not content:
         log(logger, "FastHTML", "warning", "process", "Empty content")
         return Result.success("")
-    
-    if result := validate_content(content, is_escaped):
-        return result
     
     # Try to parse as a FastHTML tag
     tags = parse_fasthtml_tags(content, first_only=True)

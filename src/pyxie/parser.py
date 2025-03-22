@@ -203,7 +203,7 @@ def _validate_inner_tags(block_content: str, content: str, tag_name: str, start_
     
     return True
 
-def _create_content_block(tag_name: str, content: str, params_str: str, index: int, is_escaped: bool = False) -> ContentBlock:
+def _create_content_block(tag_name: str, content: str, params_str: str, index: int) -> ContentBlock:
     """Create a ContentBlock instance from tag information."""
     params = parse_params(params_str) if params_str else {}
     return ContentBlock(
@@ -211,8 +211,7 @@ def _create_content_block(tag_name: str, content: str, params_str: str, index: i
         content=content,
         params=params,
         content_type='markdown',
-        index=index,
-        is_escaped=is_escaped
+        index=index
     )
 
 def _warn_unclosed_tag(tag_name: str, line_num: int, filename: Optional[str] = None) -> None:
@@ -272,7 +271,7 @@ def _process_tag_match(content: str,
         return None
     
     # Check if this tag is inside a code block (either the start or the end)
-    tag_is_escaped = (
+    is_in_code = (
         is_in_code_block(start_pos, code_blocks) or 
         is_in_code_block(closing_pos, code_blocks) or
         (tag_name.lower() in FASTHTML_BLOCK_NAMES and
@@ -280,13 +279,31 @@ def _process_tag_match(content: str,
              for pos in range(start_pos, closing_pos, max(1, (closing_pos - start_pos) // 5))))
     )
     
+    # If the tag is in a code block and it's a FastHTML tag, escape its contents
+    # to ensure it doesn't get executed later in the pipeline
+    if is_in_code and tag_name.lower() in FASTHTML_BLOCK_NAMES:
+        # Escape the angle brackets inside the content to prevent execution
+        escaped_content = block_content.replace("<", "&lt;").replace(">", "&gt;")
+        
+        # Log that we're escaping this FastHTML content
+        log(logger, "Parser", "info", "blocks", 
+            f"Escaping FastHTML content in code block at line {open_line}", 
+            Path(filename) if filename else None)
+        
+        # Create content block with escaped content
+        return _create_content_block(
+            tag_name, 
+            escaped_content, 
+            params_str, 
+            0  # Index will be set by the caller
+        )
+    
     # Create content block
     return _create_content_block(
         tag_name, 
         block_content, 
         params_str, 
-        0,  # Index will be set by the caller
-        tag_is_escaped
+        0  # Index will be set by the caller
     )
 
 def find_content_blocks(content: str, filename: Optional[str] = None, warn_unclosed: bool = True) -> Dict[str, List[ContentBlock]]:

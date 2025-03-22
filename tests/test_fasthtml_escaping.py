@@ -166,4 +166,48 @@ show(ExampleComponent())
     # Verify the escaped tags remain in the final output
     assert "&lt;fasthtml&gt;" in html
     assert "def ExampleComponent()" in html
-    assert "show(ExampleComponent())" in html 
+    assert "show(ExampleComponent())" in html
+
+def test_documentation_example_with_missing_component():
+    """Test that FastHTML tags in documentation examples aren't executed."""
+    # This simulates the exact error case from the user query where
+    # FastHTML in documentation examples tries to import non-existent components
+    content = """
+## Writing Content
+
+```markdown
+<!-- Use FastHTML for dynamic content -->
+<fasthtml>
+# Import components from your app
+from components import Button
+from datetime import datetime
+
+def Greeting():
+    return Div(
+        H1("Hello, World!", cls="text-3xl font-bold"),
+        P(f"The time is: {datetime.now().strftime('%H:%M')}"),
+        Button(text="Click me!", onclick="alert('Hello!')")
+    )
+
+# Use show() to render FastHTML components
+show(Greeting())
+</fasthtml>
+```
+
+In this example, we're importing a Button component that wouldn't exist 
+in the documentation environment, but that's fine since this is just example code.
+"""
+    
+    # Render the markdown
+    html = render_markdown(content)
+    
+    # Check that FastHTML tags in code examples are escaped
+    assert "&lt;fasthtml&gt;" in html
+    assert "&lt;/fasthtml&gt;" in html
+    assert "from components import Button" in html
+    assert "show(Greeting())" in html
+    
+    # Verify the code isn't actually executed
+    # If it was executed, it would try to import the non-existent Button component
+    # and fail, but we want to make sure it's treated as example code
+    assert "ImportError" not in html 

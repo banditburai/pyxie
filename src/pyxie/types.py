@@ -52,7 +52,6 @@ class ContentBlock:
     content_type: ContentType = "markdown"
     params: Dict[str, Any] = field(default_factory=dict)
     index: int = 0
-    is_escaped: bool = False  # Indicates whether this block is inside a code block
 
     def __post_init__(self):
         """Validate and normalize content type."""
