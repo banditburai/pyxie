@@ -7,7 +7,7 @@ especially for complex nested component structures.
 
 import logging
 
-from pyxie.fasthtml import render_fasthtml, EXECUTABLE_MARKER, RenderResult
+from pyxie.fasthtml import render_fasthtml, EXECUTABLE_MARKER_START, EXECUTABLE_MARKER_END, RenderResult
 import fasthtml.common as ft_common
 from pyxie.parser import find_content_blocks, find_code_blocks
 from pyxie.renderer import render_block
@@ -24,9 +24,9 @@ logging.basicConfig(level=logging.DEBUG)
 
 def test_simple_component():
     """Test rendering of a simple component."""
-    content = EXECUTABLE_MARKER + """<fasthtml>
+    content = EXECUTABLE_MARKER_START + """<fasthtml>
 show(Div("Hello World", cls="test-class"))
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
     result = render_fasthtml(content)
     assert hasattr(result, 'success'), "Result object doesn't have a success attribute"
     assert result.success
@@ -35,13 +35,13 @@ show(Div("Hello World", cls="test-class"))
 
 def test_nested_components():
     """Test rendering of nested components."""
-    content = EXECUTABLE_MARKER + """<fasthtml>
+    content = EXECUTABLE_MARKER_START + """<fasthtml>
 component = Div(
     Div("Inner content", cls="inner"),
     cls="outer"
 )
 show(component)
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
     result = render_fasthtml(content)
     assert hasattr(result, 'success'), "Result object doesn't have a success attribute"
     assert result.success
@@ -51,12 +51,12 @@ show(component)
 
 def test_component_function():
     """Test rendering of a component function."""
-    content = EXECUTABLE_MARKER + """<fasthtml>
+    content = EXECUTABLE_MARKER_START + """<fasthtml>
 def MyComponent(text):
     return Div(text, cls="custom")
     
 show(MyComponent("Hello from function"))
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
     result = render_fasthtml(content)
     assert hasattr(result, 'success'), "Result object doesn't have a success attribute"
     assert result.success
@@ -65,13 +65,13 @@ show(MyComponent("Hello from function"))
 
 def test_list_comprehension():
     """Test rendering of components created with list comprehension."""
-    content = EXECUTABLE_MARKER + """<fasthtml>
+    content = EXECUTABLE_MARKER_START + """<fasthtml>
 component = Div(
     *[P(f"Item {i}", cls=f"item-{i}") for i in range(3)],
     cls="list-container"
 )
 show(component)
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
     result = render_fasthtml(content)
     assert hasattr(result, 'success'), "Result object doesn't have a success attribute"
     assert result.success
@@ -83,7 +83,7 @@ show(component)
 
 def test_image_gallery():
     """Test rendering of an image gallery with multiple nested components."""
-    content = EXECUTABLE_MARKER + """<fasthtml>
+    content = EXECUTABLE_MARKER_START + """<fasthtml>
 def ImageCard(src, alt=""):
     return Div(
         Img(src=src, alt=alt, cls="img-style"),
@@ -97,7 +97,7 @@ gallery = Div(
     cls="gallery"
 )
 show(gallery)
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
     result = render_fasthtml(content)
     assert hasattr(result, 'success'), "Result object doesn't have a success attribute"
     assert result.success
@@ -110,7 +110,7 @@ show(gallery)
 
 def test_bar_chart():
     """Test rendering of a bar chart with list comprehension in a function."""
-    content = EXECUTABLE_MARKER + """<fasthtml>
+    content = EXECUTABLE_MARKER_START + """<fasthtml>
 def BarChart(data):
     max_value = max(value for _, value in data)
     
@@ -133,7 +133,7 @@ data = [
 ]
 
 show(BarChart(data))
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
     result = render_fasthtml(content)
     assert hasattr(result, 'success'), "Result object doesn't have a success attribute"
     assert result.success
@@ -145,10 +145,10 @@ show(BarChart(data))
 def test_fasthtml_execution_in_content():
     """Test that FastHTML blocks are properly executed and rendered in content."""
     # Create test content with FastHTML - using the components already imported
-    test_content = EXECUTABLE_MARKER + """<fasthtml>
+    test_content = EXECUTABLE_MARKER_START + """<fasthtml>
 # Use Button component that's already imported in this test file
 show(Button("Click me", cls="test-button"))
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
     
     # Render the block
     result = render_fasthtml(test_content)
@@ -213,9 +213,9 @@ def test_fasthtml_with_content_type_ft():
     from pyxie.renderer import render_block
     
     # Create a FastHTML block with content_type="ft"
-    content = EXECUTABLE_MARKER + """<fasthtml>
+    content = EXECUTABLE_MARKER_START + """<fasthtml>
 show(Div("This should execute even with ft content type", cls="test-ft-div"))
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
     
     # Create the content block with content_type="ft"
     block = ContentBlock(
@@ -240,12 +240,12 @@ def test_integrated_fasthtml_parsing_and_rendering():
     from pyxie.parser import find_content_blocks, find_code_blocks
     from pyxie.types import ContentBlock
     from pyxie.renderer import render_block
-    from pyxie.fasthtml import EXECUTABLE_MARKER
+    from pyxie.fasthtml import EXECUTABLE_MARKER_START, EXECUTABLE_MARKER_END
 
     # Create a FastHTML block with executable marker
-    fasthtml_content = EXECUTABLE_MARKER + """<fasthtml>
+    fasthtml_content = EXECUTABLE_MARKER_START + """<fasthtml>
 show(Div("This is a FastHTML component in content", cls="integration-test"))
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
 
     # Create a ContentBlock directly
     block = ContentBlock(
@@ -273,9 +273,9 @@ def test_content_block_type_rendering():
     from pyxie.renderer import render_block
     
     # Get a basic executable FastHTML content block
-    base_content = EXECUTABLE_MARKER + """<fasthtml>
+    base_content = EXECUTABLE_MARKER_START + """<fasthtml>
 show(Div("This is test content", cls="test-type-div"))
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
     
     # Test various content_type values that might be set during parsing
     content_types = ["", None, "md", "markdown", "html", "ft"]
@@ -299,13 +299,13 @@ show(Div("This is test content", cls="test-type-div"))
 
 def test_problematic_fasthtml_formats():
     """Test handling of problematic FastHTML formats that might occur in real-world usage."""
-    from pyxie.fasthtml import render_fasthtml, EXECUTABLE_MARKER
+    from pyxie.fasthtml import render_fasthtml, EXECUTABLE_MARKER_START, EXECUTABLE_MARKER_END
     
     # Test case 1: Content with the marker but without proper <fasthtml> tags
     # This simulates a case where the parser added the marker but tags were altered
-    content1 = EXECUTABLE_MARKER + """
+    content1 = EXECUTABLE_MARKER_START + """
 show(Div("This should still execute even without proper tags", cls="test-problematic"))
-"""
+""" + EXECUTABLE_MARKER_END
     
     result1 = render_fasthtml(content1)
     assert hasattr(result1, 'success'), "Result object doesn't have a success attribute"
@@ -313,9 +313,9 @@ show(Div("This should still execute even without proper tags", cls="test-problem
     assert '<div class="test-problematic">' in result1.content, "Component not rendered correctly"
     
     # Test case 2: Content with the marker and malformed tags
-    content2 = EXECUTABLE_MARKER + """<fasthtml>
+    content2 = EXECUTABLE_MARKER_START + """<fasthtml>
 show(Div("This has malformed tags", cls="test-malformed"))
-</Fasthtml>"""  # Note the capitalization mismatch
+</Fasthtml>""" + EXECUTABLE_MARKER_END  # Note the capitalization mismatch
     
     result2 = render_fasthtml(content2)
     assert hasattr(result2, 'success'), "Result object doesn't have a success attribute"
@@ -323,11 +323,11 @@ show(Div("This has malformed tags", cls="test-malformed"))
     assert '<div class="test-malformed">' in result2.content, "Component not rendered with malformed tags"
     
     # Test case 3: Content with extra text outside the tags
-    content3 = EXECUTABLE_MARKER + """Some text before
+    content3 = EXECUTABLE_MARKER_START + """Some text before
 <fasthtml>
 show(Div("This has text outside tags", cls="test-outside"))
 </fasthtml>
-Some text after"""
+Some text after""" + EXECUTABLE_MARKER_END
     
     result3 = render_fasthtml(content3)
     assert hasattr(result3, 'success'), "Result object doesn't have a success attribute"

@@ -25,6 +25,7 @@ from .constants import DEFAULT_METADATA
 from .types import ContentBlock, ContentProvider, Metadata
 from .utilities import log, get_line_number, convert_value
 from .params import parse_params
+from .fasthtml import EXECUTABLE_MARKER_START, EXECUTABLE_MARKER_END
 
 logger = logging.getLogger(__name__)
 
@@ -288,12 +289,8 @@ def _process_tag_match(content: str,
                 0  # Index will be set by the caller
             )
         else:
-            # NOT in a code block - mark for execution with special wrapper
-            # We wrap the content in a special marker that fasthtml.py will recognize
-            # Also protect the content from HTML processing by HTML-escaping it
-            # The fasthtml processor will unescape it before execution
-            escaped_content = block_content.replace("<", "&lt;").replace(">", "&gt;")
-            executable_content = f"__EXECUTABLE_FASTHTML__{escaped_content}"
+            # NOT in a code block - mark for execution with special wrapper            
+            executable_content = f"{EXECUTABLE_MARKER_START}{block_content}{EXECUTABLE_MARKER_END}"
             
             log(logger, "Parser", "info", "blocks", 
                 f"Marking FastHTML content for execution at line {open_line}", 

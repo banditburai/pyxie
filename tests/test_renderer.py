@@ -2,6 +2,7 @@
 
 import pytest
 from pyxie.renderer import PyxieHTMLRenderer, render_markdown, process_conditional_visibility
+from pyxie.fasthtml import EXECUTABLE_MARKER_START, EXECUTABLE_MARKER_END
 
 @pytest.fixture
 def renderer():
@@ -145,4 +146,71 @@ def test_self_closing_tags_rendering():
     assert "<br>" in result
     assert "<img" in result
     assert "<hr>" in result
-    assert "<input" in result 
+    assert "<input" in result
+
+def test_fasthtml_token_recognition():
+    """Test that FastHTML blocks are recognized and preserved during markdown processing."""
+    # Create a FastHTML block with our special marker format
+    fasthtml_content = f"{EXECUTABLE_MARKER_START}show('Hello world'){EXECUTABLE_MARKER_END}"
+    markdown = f"# Header\n\n{fasthtml_content}\n\n- List item"
+    html = render_markdown(markdown)
+    
+    # Check that the FastHTML content was correctly processed
+    assert '<h1 id="header">Header</h1>' in html
+    assert 'Hello world' in html
+    assert '<li>List item</li>' in html
+    # Ensure no paragraph tags were inserted inside FastHTML content
+    assert '<p><fasthtml>' not in html
+
+def test_fasthtml_content_preservation():
+    """Test that FastHTML content is preserved exactly as is."""
+    # Create a FastHTML block with our special marker format - use show() to display the result
+    fasthtml_content = f"{EXECUTABLE_MARKER_START}def function():\n    # This is a comment\n    return 'test'\n\nshow(function()){EXECUTABLE_MARKER_END}"
+    markdown = fasthtml_content
+    html = render_markdown(markdown)
+    
+    # Check that content is processed correctly and syntax is preserved
+    assert 'test' in html
+    
+def test_fasthtml_code_execution():
+    """Test that FastHTML code is executed properly."""
+    # Create a FastHTML block with our special marker format
+    fasthtml_content = f"{EXECUTABLE_MARKER_START}show(f'The result is: {{1 + 2}}'){EXECUTABLE_MARKER_END}"
+    markdown = fasthtml_content
+    html = render_markdown(markdown)
+    
+    # Check that the code was executed and output is rendered
+    assert 'The result is: 3' in html
+    
+def test_mixed_markdown_and_fasthtml():
+    """Test a mix of markdown and FastHTML content."""
+    # Create a FastHTML block with our special marker format
+    fasthtml_content = f"{EXECUTABLE_MARKER_START}\nfrom fastcore.xml import Div, P\nshow(Div(P(\"This is generated content\"), cls=\"generated\"))\n{EXECUTABLE_MARKER_END}"
+    
+    markdown = f"""
+# Title
+
+Regular paragraph with *emphasis* and **strong** text.
+
+{fasthtml_content}
+
+1. Ordered list
+2. Second item
+
+> Blockquote content
+    """
+    html = render_markdown(markdown)
+    
+    # Check that markdown is rendered correctly
+    assert '<h1 id="title">Title</h1>' in html
+    assert '<em>emphasis</em>' in html
+    assert '<strong>strong</strong>' in html
+    
+    # Check that FastHTML content is executed and rendered
+    assert '<div class="generated">' in html
+    assert '<p>This is generated content</p>' in html
+    
+    # Check that markdown after FastHTML is rendered correctly
+    assert '<ol>' in html
+    assert '<li>Ordered list</li>' in html
+    assert '<blockquote>' in html 

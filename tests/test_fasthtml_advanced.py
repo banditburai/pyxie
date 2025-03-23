@@ -16,7 +16,7 @@ from pyxie.fasthtml import (
     render_fasthtml, parse_fasthtml_tags, create_namespace,
     safe_import, process_imports, py_to_js, js_function,
     protect_script_tags,
-    EXECUTABLE_MARKER,
+    EXECUTABLE_MARKER_START, EXECUTABLE_MARKER_END,
     extract_executable_content
 )
 from pyxie.types import ContentBlock
@@ -152,8 +152,8 @@ class TestContentManipulation:
     def test_extract_executable_content(self):
         """Test detection and extraction of executable FastHTML content."""
         # Simple check for executable marker
-        test_marked = f"{EXECUTABLE_MARKER}print('hello')"
-        assert test_marked.startswith(EXECUTABLE_MARKER)
+        test_marked = f"{EXECUTABLE_MARKER_START}print('hello'){EXECUTABLE_MARKER_END}"
+        assert test_marked.startswith(EXECUTABLE_MARKER_START)
         
         # Import the function to test
         from pyxie.fasthtml import is_executable_fasthtml, extract_executable_content
@@ -262,7 +262,7 @@ class TestComplexRendering:
     
     def test_complex_nested_components(self):
         """Test rendering of deeply nested component structures."""
-        content = EXECUTABLE_MARKER + """<fasthtml>
+        content = EXECUTABLE_MARKER_START + """<fasthtml>
 def Card(title, content, footer=None):
     components = [
         Div(title, cls="card-title"),
@@ -290,7 +290,7 @@ app = Div(
 )
 
 show(app)
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
 
         result = render_fasthtml(content)
         assert result.success
@@ -314,7 +314,7 @@ show(app)
 
     def test_conditional_rendering(self):
         """Test conditional rendering in FastHTML components."""
-        content = EXECUTABLE_MARKER + """<fasthtml>
+        content = EXECUTABLE_MARKER_START + """<fasthtml>
 def ConditionalComponent(condition):
     if condition:
         return Div("Condition is True", cls="true-condition")
@@ -323,7 +323,7 @@ def ConditionalComponent(condition):
 
 show(ConditionalComponent(True))
 show(ConditionalComponent(False))
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
 
         result = render_fasthtml(content)
         assert result.success
@@ -335,7 +335,7 @@ show(ConditionalComponent(False))
 
     def test_component_with_javascript(self):
         """Test components with JavaScript in FastHTML."""
-        content = EXECUTABLE_MARKER + """<fasthtml>
+        content = EXECUTABLE_MARKER_START + """<fasthtml>
 def PageWithJS(title):
     return Div(
         Div(title, cls="title"),
@@ -351,7 +351,7 @@ def PageWithJS(title):
     )
 
 show(PageWithJS("Example Page"))
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
 
         result = render_fasthtml(content)
         assert result.success
@@ -381,14 +381,14 @@ def CustomComponent(title, content):
         # Allow time for the file to be saved
         time.sleep(0.1)
 
-        content = EXECUTABLE_MARKER + """<fasthtml>
+        content = EXECUTABLE_MARKER_START + """<fasthtml>
 import sys
 sys.path.insert(0, r'""" + str(test_module_dir) + """')
 
 import test_components
 custom = test_components.CustomComponent("Test Title", "This is the content")
 show(custom)
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
 
         result = render_fasthtml(content)
         assert result.success, f"Error: {result.error}"
@@ -401,13 +401,13 @@ show(custom)
 
     def test_dynamic_components(self):
         """Test dynamic component generation in FastHTML."""
-        content = EXECUTABLE_MARKER + """<fasthtml>
+        content = EXECUTABLE_MARKER_START + """<fasthtml>
 def create_components(count):
     return [Div(f"Component {i}", cls=f"component-{i}") for i in range(count)]
 
 container = Div(*create_components(3), cls="container")
 show(container)
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
 
         result = render_fasthtml(content)
         assert result.success
@@ -421,13 +421,13 @@ show(container)
 
     def test_component_with_props(self):
         """Test component with props in FastHTML."""
-        content = EXECUTABLE_MARKER + """<fasthtml>
+        content = EXECUTABLE_MARKER_START + """<fasthtml>
 def Button(text, cls="btn", **props):
     props_str = ' '.join([f'{k}="{v}"' for k, v in props.items()])
     return f'<button class="{cls}" {props_str}>{text}</button>'
 
 show(Button("Click me", cls="btn-primary", id="submit-btn", disabled="true"))
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
 
         result = render_fasthtml(content)
         assert result.success
@@ -441,24 +441,16 @@ show(Button("Click me", cls="btn-primary", id="submit-btn", disabled="true"))
 
     def test_nested_tags(self):
         """Test processing of nested FastHTML tags."""
-        content = """<fasthtml>
-show(Div("Outer component"))
-</fasthtml>
+        # Test content with executable marker
+        content = EXECUTABLE_MARKER_START + """
+show(Div("Test component"))
+""" + EXECUTABLE_MARKER_END
 
-<p>Regular HTML content</p>
-
-<fasthtml>
-show(Div("Inner component"))
-</fasthtml>"""
-
-        # Process the entire content with nested tags
+        # Process the content with the marker
         result = render_fasthtml(content)
         
-        # In our new design, these won't execute without the EXECUTABLE_MARKER
-        # Check that the content is preserved as text
-        assert 'show(Div("Outer component"))' in result.content
-        assert '<p>Regular HTML content</p>' in result.content
-        assert 'show(Div("Inner component"))' in result.content
+        # The component should be rendered
+        assert '<div>Test component</div>' in result.content
 
 # Test error handling
 class TestErrorHandling:
@@ -466,11 +458,11 @@ class TestErrorHandling:
     
     def test_syntax_error(self):
         """Test that syntax errors are caught and reported properly."""
-        content = EXECUTABLE_MARKER + """<fasthtml>
+        content = EXECUTABLE_MARKER_START + """<fasthtml>
 def broken_function(
     # Missing closing parenthesis
     return "This will never execute"
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
 
         result = render_fasthtml(content)
         assert not result.success
@@ -478,12 +470,12 @@ def broken_function(
     
     def test_runtime_error(self):
         """Test that runtime errors are caught and reported properly."""
-        content = EXECUTABLE_MARKER + """<fasthtml>
+        content = EXECUTABLE_MARKER_START + """<fasthtml>
 def div_by_zero():
     return 1 / 0
 
 show(div_by_zero())
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
 
         result = render_fasthtml(content)
         assert not result.success
@@ -491,9 +483,9 @@ show(div_by_zero())
     
     def test_component_error(self):
         """Test that component errors are caught and reported properly."""
-        content = EXECUTABLE_MARKER + """<fasthtml>
+        content = EXECUTABLE_MARKER_START + """<fasthtml>
 show(UndefinedComponent())
-</fasthtml>"""
+</fasthtml>""" + EXECUTABLE_MARKER_END
 
         result = render_fasthtml(content)
         assert not result.success
@@ -509,3 +501,29 @@ undefined_variable + 1
         result = render_fasthtml(content)
         assert result.success
         assert "undefined_variable + 1" in result.content 
+        
+    def test_non_executable_content_safety(self):
+        """Verify that content is only executed when it has the executable marker."""
+        # Content without the marker should not execute
+        content_without_marker = """<fasthtml>
+# This should not execute
+x = 'test content preserved'
+show(x)
+</fasthtml>"""
+        
+        result = render_fasthtml(content_without_marker)
+        # Should succeed and preserve the content
+        assert result.success
+        assert "show(x)" in result.content
+        
+        # Same content with marker should execute
+        content_with_marker = EXECUTABLE_MARKER_START + """
+# This should execute
+x = 'test content executed'
+show(x)
+""" + EXECUTABLE_MARKER_END
+        
+        result = render_fasthtml(content_with_marker)
+        # Should succeed and show the result
+        assert result.success
+        assert "test content executed" in result.content 

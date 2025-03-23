@@ -11,7 +11,7 @@ from pyxie.renderer import render_block, render_content
 from pyxie.parser import ContentBlock
 from pyxie.layouts import layout
 from pyxie.pyxie import Pyxie
-from pyxie.fasthtml import render_fasthtml
+from pyxie.fasthtml import render_fasthtml, EXECUTABLE_MARKER_START, EXECUTABLE_MARKER_END
 
 T = TypeVar('T', bound=FT)
 
@@ -212,25 +212,23 @@ def test_complex_nested_content() -> None:
 
 def test_process_fasthtml():
     """Test integration with FastHTML rendering."""
-    from pyxie.fasthtml import render_fasthtml, EXECUTABLE_MARKER
+    from pyxie.fasthtml import render_fasthtml, EXECUTABLE_MARKER_START, EXECUTABLE_MARKER_END
     import fasthtml.common as ft_common
     
     # Import components for test
     Div = ft_common.Div
     
     # Add the executable marker to the content
-    content = EXECUTABLE_MARKER + """<fasthtml>
-def Greeting(name):
+    content = EXECUTABLE_MARKER_START + """def Greeting(name):
     return Div(f"Hello, {name}!", cls="greeting")
-show(Greeting("World"))
-</fasthtml>"""
+show(Greeting("World"))""" + EXECUTABLE_MARKER_END
     
     result = render_fasthtml(content)
     assert "<div class=\"greeting\">Hello, World!</div>" in result.content
 
 def test_fasthtml_in_content_block():
     """Test that FastHTML blocks in content are properly executed and rendered."""
-    from pyxie.fasthtml import render_fasthtml, EXECUTABLE_MARKER
+    from pyxie.fasthtml import render_fasthtml, EXECUTABLE_MARKER_START, EXECUTABLE_MARKER_END
     import fasthtml.common as ft_common
 
     # Import components for the test to work with ft_common namespace
@@ -240,9 +238,7 @@ def test_fasthtml_in_content_block():
     NotStr = ft_common.NotStr
 
     # Use the exact same format as a working test
-    content = EXECUTABLE_MARKER + """<fasthtml>
-show(Div("Hello World", cls="test-class"))
-</fasthtml>"""
+    content = EXECUTABLE_MARKER_START + """show(Div("Hello World", cls="test-class"))""" + EXECUTABLE_MARKER_END
     
     result = render_fasthtml(content)
     assert result.success
@@ -252,7 +248,7 @@ def test_render_block_with_fasthtml():
     """Test the integration between render_block and FastHTML execution."""
     from pyxie.types import ContentBlock
     from pyxie.renderer import render_block
-    from pyxie.fasthtml import EXECUTABLE_MARKER
+    from pyxie.fasthtml import EXECUTABLE_MARKER_START, EXECUTABLE_MARKER_END
     import fasthtml.common as ft_common
 
     # Import components for the test to work with ft_common namespace
@@ -262,9 +258,7 @@ def test_render_block_with_fasthtml():
     NotStr = ft_common.NotStr
 
     # Create properly formatted FastHTML content with the executable marker
-    content = EXECUTABLE_MARKER + """<fasthtml>
-show(Div("Hello World", cls="test-class"))
-</fasthtml>"""
+    content = EXECUTABLE_MARKER_START + """show(Div("Hello World", cls="test-class"))""" + EXECUTABLE_MARKER_END
     
     # Create a ContentBlock with the content
     block = ContentBlock(

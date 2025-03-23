@@ -26,13 +26,21 @@ from lxml import html
 
 from .types import ContentBlock, ContentItem
 from .layouts import get_layout
-from .fasthtml import render_fasthtml, RenderResult, EXECUTABLE_MARKER, is_executable_fasthtml
+from .fasthtml import render_fasthtml, RenderResult, EXECUTABLE_MARKER_START, EXECUTABLE_MARKER_END
 from .errors import format_error_html
 from .utilities import log
 
 logger = logging.getLogger(__name__)
 PYXIE_SHOW_ATTR = "data-pyxie-show"  # Visibility control attribute
 SELF_CLOSING_TAGS = frozenset({'br', 'img', 'input', 'hr', 'meta', 'link'})
+
+# Pattern to find FastHTML blocks
+FASTHTML_PATTERN = re.compile(r'<(fasthtml)([^>]*)>(.*?)</\1>', re.DOTALL)
+# Pattern to find marked executable FastHTML blocks
+EXECUTABLE_FASTHTML_PATTERN = re.compile(
+    f"{EXECUTABLE_MARKER_START}(.*?){EXECUTABLE_MARKER_END}", 
+    re.DOTALL
+)
 
 class CacheProtocol(Protocol):
     """Protocol for cache objects."""
@@ -47,6 +55,7 @@ class PyxieHTMLRenderer(HTMLRenderer):
     def __init__(self):
         super().__init__(process_html_tokens=True)
         self._used_ids = set()
+        self._fasthtml_blocks = {}
     
     def _make_id(self, text: str) -> str:
         """Generate a unique ID for a header."""
@@ -95,6 +104,69 @@ class PyxieHTMLRenderer(HTMLRenderer):
             seed=seed, width=width or self.DEFAULT_WIDTH, height=height or self.DEFAULT_HEIGHT
         )
 
+def extract_fasthtml_blocks(content: str) -> tuple:
+    """
+    Extract executable FastHTML blocks from content and replace them with placeholders.
+    Only blocks that have been marked with our special HTML comments are extracted.
+    Regular <fasthtml> tags are left as-is for markdown processing.
+    
+    Returns a tuple of (modified_content, fasthtml_blocks)
+    """
+    fasthtml_blocks = {}
+    
+    # Find all blocks marked with our special HTML comments
+    result_parts = []
+    last_pos = 0
+    
+    for match in EXECUTABLE_FASTHTML_PATTERN.finditer(content):
+        block_content = match.group(1)
+        start_pos, end_pos = match.span()
+        
+        # Add content before this match
+        result_parts.append(content[last_pos:start_pos])
+        
+        # Create a placeholder - use HTML comments that won't be processed by markdown
+        index = len(fasthtml_blocks)
+        placeholder = f"<!--FASTHTML-PLACEHOLDER:{index}-->"
+        
+        # Store the content with the wrapper markers to ensure it's recognized as executable
+        # This ensures render_fasthtml will know to execute it
+        fasthtml_blocks[placeholder] = EXECUTABLE_MARKER_START + block_content + EXECUTABLE_MARKER_END
+        
+        # Add the placeholder
+        result_parts.append(placeholder)
+        
+        # Update last position
+        last_pos = end_pos
+    
+    # Add remaining content
+    result_parts.append(content[last_pos:])
+    
+    # Join the parts to create modified content
+    modified_content = "".join(result_parts)
+    
+    return modified_content, fasthtml_blocks
+
+def restore_fasthtml_blocks(html_content: str, fasthtml_blocks: dict) -> str:
+    """
+    Process FastHTML blocks and restore them in the rendered HTML.
+    """
+    for placeholder, content in fasthtml_blocks.items():
+        # Render the FastHTML content directly using render_fasthtml 
+        # which properly handles execution of the code
+        result = render_fasthtml(content)
+        
+        # Replace the placeholder with the rendered content
+        if result.success:
+            rendered = result.content            
+        else:
+            rendered = f"<div class='error'>{result.error}</div>"
+        
+        # Replace the placeholder with the rendered content
+        html_content = html_content.replace(placeholder, rendered)
+    
+    return html_content
+
 @lru_cache(maxsize=32)
 def render_markdown(content: str) -> str:
     """Render markdown content to HTML with preprocessing."""
@@ -109,8 +181,17 @@ def render_markdown(content: str) -> str:
     min_indent = min((len(line) - len(line.lstrip()) for line in lines if line.strip()), default=0)
     content = "\n".join(line[min_indent:] for line in lines)
     
+    # Extract FastHTML blocks before markdown processing
+    modified_content, fasthtml_blocks = extract_fasthtml_blocks(content)
+    
     # Convert markdown to HTML
-    return PyxieHTMLRenderer().render(Document(content))
+    html_content = PyxieHTMLRenderer().render(Document(modified_content))
+    
+    # Restore and process FastHTML blocks
+    if fasthtml_blocks:
+        html_content = restore_fasthtml_blocks(html_content, fasthtml_blocks)
+    
+    return html_content
 
 def render_block(block: ContentBlock, cache: Optional[CacheProtocol] = None) -> RenderResult:
     """Render a content block to HTML."""
@@ -126,14 +207,18 @@ def render_block(block: ContentBlock, cache: Optional[CacheProtocol] = None) -> 
         if not block.content.strip():
             return RenderResult(error="Cannot render empty content block")
         
-        content = block.content
-                
-        if is_executable_fasthtml(content):
-            log(logger, "Renderer", "info", "fasthtml", 
-                f"Processing block {block.name} with executable marker")
+        # Handle blocks differently based on their name
+        if block.name == "fasthtml":
+            # For explicitly named fasthtml blocks, wrap them in our marker
+            # to mark them as executable before processing
+            if not block.content.startswith(EXECUTABLE_MARKER_START):
+                content = EXECUTABLE_MARKER_START + block.content + EXECUTABLE_MARKER_END
+            else:
+                content = block.content
             return render_fasthtml(content)
-                                          
-        return RenderResult(content=render_markdown(content))
+        else:
+            # For other blocks, use render_markdown which extracts and processes marked FastHTML
+            return RenderResult(content=render_markdown(block.content))
     
     except Exception as e:
         log(logger, "Renderer", "error", "block", f"Failed to render block {block.name}: {e}")

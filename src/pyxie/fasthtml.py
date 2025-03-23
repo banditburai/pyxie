@@ -31,7 +31,10 @@ FASTHTML_TAG_PATTERN = re.compile(r'<(fasthtml)([^>]*)>(.*?)</(?i:\1)>', re.DOTA
 FASTHTML_ATTR_PATTERN = re.compile(r'(\w+)=(["\'])(.*?)\2', re.DOTALL)
 IMPORT_PATTERN = re.compile(r'^(?:from\s+([^\s]+)\s+import|import\s+([^#\n]+))', re.MULTILINE)
 SCRIPT_TAG_PATTERN = re.compile(r'(<script[^>]*>)(.*?)(</script>)', re.DOTALL)
-EXECUTABLE_MARKER = "__EXECUTABLE_FASTHTML__"
+
+# Use HTML comments as markers for executable FastHTML blocks
+EXECUTABLE_MARKER_START = "<!--PYXIE:FASTHTML:START-->"
+EXECUTABLE_MARKER_END = "<!--PYXIE:FASTHTML:END-->"
 
 @dataclass
 class FastHTMLTagMatch:
@@ -54,23 +57,27 @@ class RenderResult:
         return self.error is None
 
 def is_executable_fasthtml(content: str) -> bool:
-    """Check if content has been marked as executable by the parser."""
-    return content and isinstance(content, str) and content.startswith(EXECUTABLE_MARKER)
+    """Check if content has been marked as executable."""
+    if not content or not isinstance(content, str):
+        return False
+    
+    # Check for the HTML comment marker format
+    if content.startswith(EXECUTABLE_MARKER_START) and EXECUTABLE_MARKER_END in content:
+        return True
+    
+    return False
 
 def extract_executable_content(content: str) -> str:
     """Extract the executable content from marked content."""
     if not is_executable_fasthtml(content):
         return content
     
-    # Extract content without the marker
-    extracted = content[len(EXECUTABLE_MARKER):]
+    # Extract from HTML comment format
+    if content.startswith(EXECUTABLE_MARKER_START) and EXECUTABLE_MARKER_END in content:
+        extracted = content[len(EXECUTABLE_MARKER_START):content.index(EXECUTABLE_MARKER_END)]
+        return extracted.strip()
     
-    # Unescape any HTML entities that might have been added during parsing
-    html_entities = {'&lt;': '<', '&gt;': '>', '&amp;': '&', '&quot;': '"', '&#x27;': "'", '&#39;': "'"}
-    for entity, char in html_entities.items():
-        extracted = extracted.replace(entity, char)
-    
-    return extracted
+    return content
 
 def parse_fasthtml_tags(content: str, first_only: bool = False) -> List[FastHTMLTagMatch]:
     """Parse FastHTML tags from content."""
@@ -287,13 +294,13 @@ def render_fasthtml(content: str, context_path: Optional[str] = None) -> RenderR
         return RenderResult(content="")
     
     try:
-        # For non-executable content, just return it as-is
-        if not is_executable_fasthtml(content):
-            log(logger, "FastHTML", "warning", "process", "Non-executable FastHTML content received")
-            return RenderResult(content=content)
-            
-        # Extract the content without the marker
+        # Extract the content if it's marked as executable
         extracted_content = extract_executable_content(content)
+        
+        # Check if content is executable (either has marker or is explicitly a fasthtml block)
+        # If not executable, return original content
+        if not is_executable_fasthtml(content):
+            return RenderResult(content=content)
         
         # Try to find and extract FastHTML tags
         inner_content = extracted_content
