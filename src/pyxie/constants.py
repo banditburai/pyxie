@@ -38,8 +38,8 @@ DEFAULT_METADATA = {
 }
 
 # Content types
-ContentType = Literal["markdown", "ft", "raw", "latex"]
-VALID_CONTENT_TYPES = {"markdown", "ft", "raw", "latex"}
+ContentType = Literal["markdown", "ft", "raw", "latex", "fasthtml"]
+VALID_CONTENT_TYPES = {"markdown", "ft", "raw", "latex", "fasthtml"}
 
 class RequiredMetadata(Enum):
     """Required metadata fields."""
