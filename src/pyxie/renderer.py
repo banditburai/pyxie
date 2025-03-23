@@ -127,14 +127,12 @@ def render_block(block: ContentBlock, cache: Optional[CacheProtocol] = None) -> 
             return RenderResult(error="Cannot render empty content block")
         
         content = block.content
-        
-        # Check for executable FastHTML marker first - highest priority
+                
         if is_executable_fasthtml(content):
             log(logger, "Renderer", "info", "fasthtml", 
                 f"Processing block {block.name} with executable marker")
             return render_fasthtml(content)
-                      
-        # Default case - render as markdown
+                                          
         return RenderResult(content=render_markdown(content))
     
     except Exception as e:

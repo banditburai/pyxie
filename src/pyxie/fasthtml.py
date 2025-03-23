@@ -59,7 +59,18 @@ def is_executable_fasthtml(content: str) -> bool:
 
 def extract_executable_content(content: str) -> str:
     """Extract the executable content from marked content."""
-    return content[len(EXECUTABLE_MARKER):] if is_executable_fasthtml(content) else content
+    if not is_executable_fasthtml(content):
+        return content
+    
+    # Extract content without the marker
+    extracted = content[len(EXECUTABLE_MARKER):]
+    
+    # Unescape any HTML entities that might have been added during parsing
+    html_entities = {'&lt;': '<', '&gt;': '>', '&amp;': '&', '&quot;': '"', '&#x27;': "'", '&#39;': "'"}
+    for entity, char in html_entities.items():
+        extracted = extracted.replace(entity, char)
+    
+    return extracted
 
 def parse_fasthtml_tags(content: str, first_only: bool = False) -> List[FastHTMLTagMatch]:
     """Parse FastHTML tags from content."""

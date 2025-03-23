@@ -290,7 +290,10 @@ def _process_tag_match(content: str,
         else:
             # NOT in a code block - mark for execution with special wrapper
             # We wrap the content in a special marker that fasthtml.py will recognize
-            executable_content = f"__EXECUTABLE_FASTHTML__{block_content}"
+            # Also protect the content from HTML processing by HTML-escaping it
+            # The fasthtml processor will unescape it before execution
+            escaped_content = block_content.replace("<", "&lt;").replace(">", "&gt;")
+            executable_content = f"__EXECUTABLE_FASTHTML__{escaped_content}"
             
             log(logger, "Parser", "info", "blocks", 
                 f"Marking FastHTML content for execution at line {open_line}", 
