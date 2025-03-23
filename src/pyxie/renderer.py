@@ -56,6 +56,7 @@ class PyxieHTMLRenderer(HTMLRenderer):
         super().__init__(process_html_tokens=True)
         self._used_ids = set()
         self._fasthtml_blocks = {}
+        self._in_code_block = False
     
     def _make_id(self, text: str) -> str:
         """Generate a unique ID for a header."""
@@ -71,6 +72,20 @@ class PyxieHTMLRenderer(HTMLRenderer):
         return header_id
     
     def render(self, token): return '' if token is None else super().render(token)
+    
+    def render_code_block(self, token):
+        """Render code blocks and track that we're inside a code block."""
+        self._in_code_block = True
+        result = super().render_code_block(token)
+        self._in_code_block = False
+        return result
+        
+    def render_inline_code(self, token):
+        """Render inline code blocks and track that we're inside a code block."""
+        self._in_code_block = True
+        result = super().render_inline_code(token)
+        self._in_code_block = False
+        return result
     
     def render_heading(self, token):
         """Render heading with automatic ID generation."""
@@ -107,14 +122,49 @@ class PyxieHTMLRenderer(HTMLRenderer):
 def extract_fasthtml_blocks(content: str) -> tuple:
     """
     Extract executable FastHTML blocks from content and replace them with placeholders.
-    Only blocks that have been marked with our special HTML comments are extracted.
-    Regular <fasthtml> tags are left as-is for markdown processing.
+    Only extracts blocks that:
+    1. Are marked with our special HTML comments, or
+    2. Are regular <fasthtml> tags that are NOT inside code blocks
+    
+    Code blocks are identified by the ```...``` syntax in markdown.
+    Regular inline code is identified by backticks.
     
     Returns a tuple of (modified_content, fasthtml_blocks)
     """
     fasthtml_blocks = {}
     
-    # Find all blocks marked with our special HTML comments
+    # Helper function to check if a position is inside a code block
+    def is_in_code_block(pos, content):
+        # Find all code block delimiters
+        code_block_starts = [m.start() for m in re.finditer(r'```', content)]
+        if not code_block_starts:
+            return False
+            
+        # Group starts and ends
+        pairs = []
+        for i in range(0, len(code_block_starts) - 1, 2):
+            if i + 1 < len(code_block_starts):
+                pairs.append((code_block_starts[i], code_block_starts[i + 1]))
+        
+        # Check if position is inside any code block
+        for start, end in pairs:
+            if start < pos < end:
+                return True
+                
+        # Also check inline code (surrounded by single backticks)
+        # This regex looks for single backticks that aren't part of triple backticks
+        inline_code_pattern = r'(?<!`)`(?!`)(.+?)(?<!`)`(?!`)'
+        inline_matches = list(re.finditer(inline_code_pattern, content))
+        
+        # Check if position is inside any inline code block
+        for match in inline_matches:
+            if match.start() < pos < match.end():
+                return True
+                
+        return False
+    
+    # STEP 1: First extract marked executable blocks
+    # These are always extracted regardless of context because they are explicitly marked
     result_parts = []
     last_pos = 0
     
@@ -125,12 +175,11 @@ def extract_fasthtml_blocks(content: str) -> tuple:
         # Add content before this match
         result_parts.append(content[last_pos:start_pos])
         
-        # Create a placeholder - use HTML comments that won't be processed by markdown
+        # Create a placeholder
         index = len(fasthtml_blocks)
         placeholder = f"<!--FASTHTML-PLACEHOLDER:{index}-->"
         
-        # Store the content with the wrapper markers to ensure it's recognized as executable
-        # This ensures render_fasthtml will know to execute it
+        # Store with markers to ensure it's recognized as executable
         fasthtml_blocks[placeholder] = EXECUTABLE_MARKER_START + block_content + EXECUTABLE_MARKER_END
         
         # Add the placeholder
@@ -139,8 +188,40 @@ def extract_fasthtml_blocks(content: str) -> tuple:
         # Update last position
         last_pos = end_pos
     
+    # Join partial result after processing marked blocks
+    current_content = "".join(result_parts) + content[last_pos:]
+    
+    # STEP 2: Then extract regular <fasthtml> tags that are NOT in code blocks
+    result_parts = []
+    last_pos = 0
+    
+    for match in FASTHTML_PATTERN.finditer(current_content):
+        tag_name, attrs, block_content = match.groups()
+        start_pos, end_pos = match.span()
+        
+        # Skip if this is inside a code block
+        if is_in_code_block(start_pos, current_content):
+            continue
+        
+        # Add content before this match
+        result_parts.append(current_content[last_pos:start_pos])
+        
+        # Create a placeholder
+        index = len(fasthtml_blocks)
+        placeholder = f"<!--FASTHTML-PLACEHOLDER:{index}-->"
+        
+        # Store with markers to ensure it's recognized as executable
+        full_content = EXECUTABLE_MARKER_START + block_content + EXECUTABLE_MARKER_END
+        fasthtml_blocks[placeholder] = full_content
+        
+        # Add the placeholder
+        result_parts.append(placeholder)
+        
+        # Update last position
+        last_pos = end_pos
+    
     # Add remaining content
-    result_parts.append(content[last_pos:])
+    result_parts.append(current_content[last_pos:])
     
     # Join the parts to create modified content
     modified_content = "".join(result_parts)
@@ -185,7 +266,8 @@ def render_markdown(content: str) -> str:
     modified_content, fasthtml_blocks = extract_fasthtml_blocks(content)
     
     # Convert markdown to HTML
-    html_content = PyxieHTMLRenderer().render(Document(modified_content))
+    renderer = PyxieHTMLRenderer()
+    html_content = renderer.render(Document(modified_content))
     
     # Restore and process FastHTML blocks
     if fasthtml_blocks:
