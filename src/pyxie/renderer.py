@@ -182,10 +182,6 @@ def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = 
 
 def render_blocks(item: ContentItem) -> Dict[str, List[str]]:
     """Render all content blocks for an item."""
-    add_token(FastHTMLToken)
-    add_token(ScriptToken)
-    add_token(ContentBlockToken)
-    
     rendered_blocks = {}
     with PyxieHTMLRenderer() as renderer:
         for block_name, blocks in item.blocks.items():

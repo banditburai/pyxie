@@ -207,6 +207,9 @@ def load_content_file(
         from .parser import parse_frontmatter
         from .types import ContentItem, ContentBlock
         from .constants import DEFAULT_METADATA
+        from mistletoe import Document
+        from mistletoe.block_token import add_token
+        from .parser import FastHTMLToken, ScriptToken, ContentBlockToken
         
         # Get raw content and parse frontmatter
         content = file_path.read_text()
@@ -217,12 +220,32 @@ def load_content_file(
         if default_metadata:
             merged_metadata = merge_metadata(merged_metadata, default_metadata)
             
-        # Create initial content block
-        blocks = {"content": [ContentBlock(
-            tag_name="markdown",
-            content=content_without_frontmatter,
-            attrs_str=""
-        )]}
+        # Register our custom tokens
+        add_token(FastHTMLToken)
+        add_token(ScriptToken)
+        add_token(ContentBlockToken)
+        
+        # Parse content into blocks using Mistletoe
+        doc = Document(content_without_frontmatter)
+        blocks = {"content": []}  # Default block
+        
+        # Extract blocks from the document's tokens
+        for token in doc.children:
+            if isinstance(token, ContentBlockToken):
+                block = ContentBlock(
+                    tag_name=token.tag_name,
+                    content=token.content,
+                    attrs_str=" ".join(f'{k}="{v}"' for k, v in token.attrs.items()) if token.attrs else ""
+                )
+                blocks.setdefault(token.tag_name, []).append(block)
+            else:
+                # For non-block tokens, store the raw content
+                if not blocks["content"]:
+                    blocks["content"].append(ContentBlock(
+                        tag_name="markdown",
+                        content=content_without_frontmatter,
+                        attrs_str=""
+                    ))
         
         return ContentItem(
             source_path=file_path,
