@@ -405,4 +405,38 @@ def parse_html_fragment(content_html: str) -> Any:
     try:
         return html.fragment_fromstring(content_html)
     except Exception:
-        return html.fragment_fromstring(f"<div>{content_html}</div>") 
+        return html.fragment_fromstring(f"<div>{content_html}</div>")
+
+def build_pagination_urls(
+    base_url: str,
+    pagination: Any,
+    tag: Optional[str] = None,
+    params: Optional[Dict[str, str]] = None
+) -> Dict[str, str]:
+    """Generate pagination URLs based on pagination info."""
+    if pagination.total_pages <= 1:
+        return {"current": base_url}
+    
+    def build_url(page: Optional[int]) -> str:
+        if page is None or page < 1 or page > pagination.total_pages:
+            return base_url
+            
+        url_params = {**(params or {})}
+        if page > 1:
+            url_params['page'] = str(page)
+        if tag:
+            url_params['tag'] = tag
+            
+        if not url_params:
+            return base_url
+            
+        return f"{base_url}?{'&'.join(f'{k}={v}' for k, v in url_params.items())}"
+    
+    return {
+        "current": build_url(pagination.current_page),
+        "next": build_url(pagination.next_page),
+        "prev": build_url(pagination.previous_page),
+        "first": build_url(1),
+        "last": build_url(pagination.total_pages),
+        "pages": {p: build_url(p) for p in pagination.page_range()}
+    } 
