@@ -93,11 +93,15 @@ class Collection:
         Args:
             file: Path to markdown file
         """                
+        log(logger, "Collection", "debug", "load", f"Loading file {file}")
         metadata = {**self.default_metadata, "layout": self.default_layout}
         
         if item := load_content_file(file, metadata, logger):
+            log(logger, "Collection", "debug", "load", f"Successfully loaded {file} with metadata: {item.metadata}")
             item.collection = self.name
             self._items[item.slug] = item
+        else:
+            log(logger, "Collection", "warning", "load", f"Failed to load {file}")
     
     def get_item(self, slug: str) -> Optional[ContentItem]:
         """Get an item by slug."""

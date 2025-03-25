@@ -203,6 +203,13 @@ def render_content(item: ContentItem, cache: Optional[CacheProtocol] = None) -> 
     """Render a content item to HTML using its layout and blocks."""
     try:
         log(logger, "Renderer", "debug", "render", f"Starting render for {item.slug}")
+        log(logger, "Renderer", "debug", "render", f"Item metadata: {item.metadata}")
+        log(logger, "Renderer", "debug", "render", f"Available blocks: {list(item.blocks.keys())}")
+        for block_name, blocks in item.blocks.items():
+            log(logger, "Renderer", "debug", "render", f"Block {block_name} has {len(blocks)} blocks")
+            for i, block in enumerate(blocks):
+                log(logger, "Renderer", "debug", "render", f"Block {block_name}[{i}] content length: {len(block.content)}")
+        
         cached_html, layout_html, layout_error = handle_cache_and_layout(item, cache)
         if cached_html:
             log(logger, "Renderer", "debug", "render", "Using cached HTML")

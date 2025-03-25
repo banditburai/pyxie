@@ -35,7 +35,15 @@ __version__ = "0.1.2"
 
 # Add html property directly to ContentItem
 # This avoids circular imports while keeping the API clean
-ContentItem.html = property(lambda self: render_content(self, self._cache))
+def _get_html(self):
+    from .utilities import log
+    import logging
+    logger = logging.getLogger(__name__)
+    log(logger, "ContentItem", "debug", "html", f"Getting HTML for {self.slug}")
+    from .renderer import render_content
+    return render_content(self, self._cache)
+
+ContentItem.html = property(_get_html)
 
 def _render_for_fasthtml(self):
     from fasthtml.common import NotStr
