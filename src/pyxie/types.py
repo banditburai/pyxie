@@ -15,25 +15,27 @@
 """Shared type definitions for Pyxie."""
 
 import logging
-from typing import Dict, Any, TypedDict, Protocol, Union, Optional, List
+from typing import Dict, Any, TypedDict, Union, Optional, List
 from pathlib import Path
 from dataclasses import dataclass, field
-from datetime import datetime
 
 from .utilities import log
-from .constants import (
-    ContentType, VALID_CONTENT_TYPES, DEFAULT_METADATA
-)
+from .constants import DEFAULT_METADATA
 
 logger = logging.getLogger(__name__)
 
 PathLike = Union[str, Path]
-MetadataDict = Dict[str, Any]
 
-class LayoutProvider(Protocol):
-    """Protocol for layout providers."""
-    def get_layout(self, name: str) -> Any: ...
-    def register_layout(self, name: str, layout: Any) -> None: ...
+@dataclass
+class RenderResult:
+    """Result of rendering a block."""
+    content: str = ""
+    error: Optional[str] = None
+
+    @property
+    def success(self) -> bool:
+        """Check if render was successful."""
+        return self.error is None
 
 class Metadata(TypedDict, total=False):
     """Common metadata fields."""
@@ -46,45 +48,60 @@ class Metadata(TypedDict, total=False):
 
 @dataclass
 class ContentBlock:
-    """A block of content with specific type and parameters."""
-    name: str
+    """A content block in a markdown document."""
+    tag_name: str
     content: str
-    content_type: ContentType = "markdown"
-    params: Dict[str, Any] = field(default_factory=dict)
-    index: int = 0
+    attrs_str: str
+    marker: Optional[str] = None
+    params: Dict[str, Any] = None
+    content_type: Optional[str] = None
 
     def __post_init__(self):
-        """Validate and normalize content type."""
-        if self.content_type not in VALID_CONTENT_TYPES:
-            log(logger, "Types", "warning", "content_type", 
-                f"Invalid content type '{self.content_type}', defaulting to 'markdown'")
-            self.content_type = "markdown"
+        """Initialize default values."""
+        if self.params is None:
+            self.params = {}
+
+@dataclass
+class MarkdownDocument:
+    """Represents a parsed markdown document with its content blocks."""
+    metadata: Dict[str, Any]
+    raw_content: str
+    html: Optional[str] = None
+    
+    # Content blocks organized by type
+    fasthtml_blocks: List[ContentBlock] = field(default_factory=list)
+    script_blocks: List[ContentBlock] = field(default_factory=list)
+    content_blocks: Dict[str, List[ContentBlock]] = field(default_factory=dict)
+    
+    def get_block(self, block_type: str, index: Optional[int] = None) -> Optional[ContentBlock]:
+        """Get a content block by type and optional index."""
+        blocks = self.content_blocks.get(block_type, [])
+        return blocks[index or 0] if blocks and (index is None or 0 <= index < len(blocks)) else None
+    
+    def get_blocks(self, block_type: str) -> List[ContentBlock]:
+        """Get all blocks of a given type."""
+        return self.content_blocks.get(block_type, [])
 
 @dataclass
 class ContentItem:
-    """A content item with flexible metadata and content handling.
-    
-    All frontmatter key-value pairs are stored in metadata and accessible
-    as attributes. For example, if frontmatter has {"author": "John"},
-    you can access it as:
-        item.metadata["author"] or item.author
-    """
-    slug: str
-    content: str
+    """A content item with metadata and blocks."""
     source_path: Path
-    content_type: ContentType = "markdown"
-    
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    
+    metadata: Dict[str, Any]
+    blocks: Dict[str, List[ContentBlock]]
     collection: Optional[str] = None
     
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
-    index: int = field(default=0)  # New field for unique indexing
-        
-    blocks: Dict[str, List[ContentBlock]] = field(default_factory=dict)        
-    _cache: Any = field(default=None, repr=False)    
-    _pyxie: Any = field(default=None, repr=False)
+    @property
+    def slug(self) -> str:
+        """Get the slug from metadata or source path."""
+        return self.metadata.get("slug", self.source_path.stem)
+
+    @property
+    def content(self) -> str:
+        """Get the raw content from the first content block."""
+        content_blocks = self.blocks.get("content", [])
+        if not content_blocks:
+            return ""
+        return content_blocks[0].content
 
     def __post_init__(self):
         """Initialize metadata and content."""
@@ -124,7 +141,7 @@ class ContentItem:
             return image                    
         if template := self.metadata.get("image_template"):
             try:
-                format_params = {"index": self.index, "slug": self.slug}
+                format_params = {"index": self.metadata.get("index"), "slug": self.slug}
                 format_params.update({
                     key: self.metadata[f"image_{key}"]
                     for key in ["width", "height", "seed", "size", "color", "format"]
@@ -150,11 +167,7 @@ class ContentItem:
             "slug": self.slug,
             "content": self.content,
             "source_path": str(self.source_path),
-            "content_type": self.content_type,
             "metadata": self.metadata,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat(),
-            "index": self.index,  # Include index in serialization
             "blocks": {
                 name: [block.__dict__ for block in blocks]
                 for name, blocks in self.blocks.items()
@@ -165,13 +178,9 @@ class ContentItem:
     def from_dict(cls, data: Dict[str, Any]) -> "ContentItem":
         """Create from dictionary."""
         item = cls(
-            metadata=data["metadata"],
-            content=data["content"],
-            slug=data["slug"],
             source_path=Path(data["source_path"]),
-            content_type=data.get("content_type", "markdown"),
-            collection=data.get("collection"),
-            index=data.get("index", 0)
+            metadata=data["metadata"],
+            blocks={}
         )
         
         for name, block_list in data.get("blocks", {}).items():
@@ -181,8 +190,3 @@ class ContentItem:
             ]
         
         return item
-
-class ContentProvider(Protocol):
-    """Protocol for content providers."""
-    def get_blocks(self, name: str) -> List[ContentBlock]: ...
-    def get_block(self, name: str, index: int = 0) -> Optional[ContentBlock]: ...

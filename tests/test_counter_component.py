@@ -3,7 +3,9 @@
 """Test for counter component example from the user."""
 
 import pytest
-from pyxie.renderer import render_markdown
+from pathlib import Path
+from pyxie.renderer import render_content
+from pyxie.types import ContentBlock, ContentItem
 
 def test_counter_component_in_code_block():
     """Test that counter component example in code blocks is properly escaped."""
@@ -43,8 +45,16 @@ show(Counter(5))
 ```
     """
     
-    # Render the markdown
-    html = render_markdown(markdown)
+    # Create content item
+    block = ContentBlock(tag_name="content", content=markdown, attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={},  # Empty metadata, no layout
+        blocks={"content": [block]}
+    )
+    
+    # Render the content
+    html = render_content(item)
     
     # Check that counter component code is properly escaped and not executed
     assert "IconifyIcon" in html
@@ -66,16 +76,24 @@ def test_counter_component_outside_code_block():
 
 Here's a regular FastHTML component:
 
-<fasthtml>
+<ft>
 def Counter(initial=5):
     return f"<div class='counter'>Count: {initial}</div>"
 
 show(Counter())
-</fasthtml>
+</ft>
     """
     
-    # Render the markdown
-    html = render_markdown(markdown)
+    # Create content item
+    block = ContentBlock(tag_name="content", content=markdown, attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={},  # Empty metadata, no layout
+        blocks={"content": [block]}
+    )
+    
+    # Render the content
+    html = render_content(item)
     
     # Check that the component was executed
     assert "<div class='counter'>Count: 5</div>" in html

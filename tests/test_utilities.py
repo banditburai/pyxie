@@ -19,7 +19,7 @@ from pyxie.utilities import (
     
     # Data transformation utilities
     normalize_tags,
-    parse_date,
+
     merge_metadata,
     get_line_number,
     convert_value,
@@ -30,6 +30,7 @@ from pyxie.utilities import (
 )
 
 from pyxie.errors import format_error_html
+from pyxie.types import ContentBlock
 
 
 class TestHtmlUtilities:
@@ -259,39 +260,7 @@ class TestDataUtilities:
         # Test with mixed types
         assert normalize_tags(["tag1", 123, True]) == ["123", "tag1", "true"]
     
-    def test_parse_date(self):
-        """Test date string parsing with various formats."""
-        # Test ISO format (which should be supported)
-        dt = parse_date("2023-01-15")
-        assert isinstance(dt, datetime)
-        assert dt.year == 2023
-        assert dt.month == 1
-        assert dt.day == 15
-        
-        # Test with time
-        dt = parse_date("2023-01-15 14:30:00")
-        assert dt.hour == 14
-        assert dt.minute == 30
-        
-        # Test various formats - we only check the ones that actually work
-        # The function uses COMMON_DATE_FORMATS from constants.py
-        for date_str in [
-            "2023/01/15",
-            "15-01-2023", 
-            "01/15/2023"
-        ]:
-            dt = parse_date(date_str)
-            if dt is not None:  # Only assert if format is supported
-                assert dt.year == 2023
-                assert dt.month == 1
-                assert dt.day == 15
-        
-        # Test invalid format
-        assert parse_date("not-a-date") is None
-        
-        # Test None handling
-        assert parse_date(None) is None
-    
+
     def test_merge_metadata(self):
         """Test merging metadata dictionaries."""
         meta1 = {"title": "Test", "author": "John"}
@@ -447,6 +416,7 @@ class TestModuleImportUtilities:
         class MockParsed:
             def __init__(self):
                 self.metadata = {"slug": "custom-slug", "title": "Test Title"}
+                self.raw_content = "Test content"
                 self.blocks = {}
         
         # Create a content item

@@ -41,6 +41,13 @@ DEFAULT_METADATA = {
 ContentType = Literal["markdown", "ft", "raw", "latex", "fasthtml"]
 VALID_CONTENT_TYPES = {"markdown", "ft", "raw", "latex", "fasthtml"}
 
+# Block names
+FASTHTML_BLOCK_NAMES = frozenset({'ft', 'fasthtml'})
+
+# HTML tags
+SELF_CLOSING_TAGS = frozenset({'img', 'br', 'hr', 'input', 'meta', 'link', 'area', 'base', 'col', 'embed', 'param', 'source'})
+PYXIE_SHOW_ATTR = "pyxie-show"
+
 class RequiredMetadata(Enum):
     """Required metadata fields."""
     TITLE = auto()

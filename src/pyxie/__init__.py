@@ -18,8 +18,7 @@ from .pyxie import Pyxie
 from .layouts import layout
 from .types import (
     ContentBlock,
-    ContentItem,
-    ContentProvider,
+    ContentItem,    
     Metadata,
     PathLike,
 )
@@ -29,7 +28,7 @@ from .errors import (
     ContentError,
     RenderError,
 )
-from .renderer import render_content, render_markdown, render_block
+from .renderer import render_content
 from .collection import Collection
 
 __version__ = "0.1.2"
@@ -56,7 +55,6 @@ __all__ = [
     # Types
     "ContentBlock",
     "ContentItem",
-    "ContentProvider",
     "Metadata",
     "PathLike",
     
@@ -68,8 +66,6 @@ __all__ = [
     
     # Rendering functions
     "render_content",
-    "render_markdown",
-    "render_block",
     
     # Collection
     "Collection",

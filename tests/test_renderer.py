@@ -1,216 +1,317 @@
-"""Test the renderer module."""
+"""Test the Pyxie renderer functionality."""
 
 import pytest
-from pyxie.renderer import PyxieHTMLRenderer, render_markdown, process_conditional_visibility
-from pyxie.fasthtml import EXECUTABLE_MARKER_START, EXECUTABLE_MARKER_END
+from pathlib import Path
+from pyxie.types import ContentItem, ContentBlock, RenderResult
+from pyxie.renderer import render_content
+from pyxie.layouts import layout, registry
+from fastcore.xml import FT, Div
+from tests.utils import ComponentFinder
+from typing import List
 
-@pytest.fixture
-def renderer():
-    """Create a fresh renderer instance for each test."""
-    return PyxieHTMLRenderer()
-
-def test_header_id_generation():
-    """Test that headers get unique IDs."""
-    markdown = "# Header 1\n\n## Header 2\n\n# Header 1\n\n### Header with ! Special @ Characters"
-    html = render_markdown(markdown)
+@pytest.fixture(autouse=True)
+def setup_test_layout():
+    """Set up test layout for all tests."""
+    # Clear any existing layouts
+    registry._layouts.clear()
     
-    assert '<h1 id="header-1">' in html
-    assert '<h2 id="header-2">' in html
-    assert '<h1 id="header-1-1">' in html  # Second instance gets -1 suffix
-    assert '<h3 id="header-with-special-characters">' in html
+    @layout("default")
+    def default_layout(content: str = "") -> FT:
+        """Default layout that just renders the content directly."""
+        return Div(data_slot="content")
 
-def test_empty_header_handling():
-    """Test handling of empty headers."""
-    markdown = "#\n\n##\n\n#"
-    html = render_markdown(markdown)
+    @layout("page")
+    def page_layout(content: str = "") -> FT:
+        """Page layout with header and footer."""
+        return Div(
+            Div("Header", cls="header"),
+            Div(data_slot="content", cls="content"),
+            Div("Footer", cls="footer")
+        )
+
+@pytest.mark.parametrize("markdown,expected_html", [
+    ("# Title\nContent", ["<h1 id=\"title\">Title</h1>", "<p>Content</p>"]),
+    ("[Link](https://example.com)\n![Image](image.jpg)", 
+     ['<a href="https://example.com">Link</a>', '<img src="image.jpg" alt="image.jpg"']),
+    ("```python\ndef test(): pass\n```\nInline `code`",
+     ["<pre><code", "def test(): pass", "<code>code</code>"])
+])
+def test_markdown_variations(markdown: str, expected_html: List[str]) -> None:
+    """Test various markdown rendering cases."""
+    block = ContentBlock(tag_name="content", content=markdown, attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={},
+        blocks={"content": [block]}
+    )
+    html = render_content(item)
+    for expected in expected_html:
+        assert expected in html
+
+def test_complex_layout_integration():
+    """Test integration of rendered markdown with complex layout."""
+    @layout("complex")
+    def complex_layout(content: str = "") -> FT:
+        return Div(
+            Div(data_slot="title", cls="title"),
+            Div(data_slot="content", cls="content"),
+            Div(data_slot="sidebar", cls="sidebar")
+        )
     
-    assert '<h1 id="section">' in html
-    assert '<h2 id="section-1">' in html
-    assert '<h1 id="section-2">' in html
+    content = """
+<title>
+# Welcome
+</title>
 
-def test_html_in_header():
-    """Test that HTML in headers is handled correctly."""
-    markdown = "# Header with <em>emphasis</em>\n\n## Header with <strong>bold</strong>"
-    html = render_markdown(markdown)
+<content>
+**Main** content with *formatting*
+</content>
+
+<sidebar>
+- Item 1
+- Item 2
+</sidebar>
+"""
+    blocks = {
+        "title": [ContentBlock(tag_name="title", content="# Welcome", attrs_str="")],
+        "content": [ContentBlock(tag_name="content", content="**Main** content with *formatting*", attrs_str="")],
+        "sidebar": [ContentBlock(tag_name="sidebar", content="- Item 1\n- Item 2", attrs_str="")]
+    }
     
-    assert '<h1 id="header-with-emphasis">' in html
-    assert '<h2 id="header-with-bold">' in html
-
-def test_unicode_headers():
-    """Test handling of Unicode characters in headers."""
-    markdown = "# Header with émojis 🎉\n\n## Another ünicode header ß"
-    html = render_markdown(markdown)
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={"layout": "complex"},
+        blocks=blocks
+    )
+    html = render_content(item)
     
-    # The renderer preserves unicode characters in IDs
-    assert '<h1 id="header-with-émojis-">' in html
-    assert '<h2 id="another-ünicode-header-ß">' in html
-
-def test_complex_document():
-    """Test a more complex document structure."""
-    markdown = "# Main Header\n\nSome content\n\n## Sub Header 1\n\nMore content\n\n## Sub Header 2\n\n### Deep Header\n\n## Sub Header 1\n\nDuplicate header"
-    html = render_markdown(markdown)
+    # Use ComponentFinder to verify structure
+    soup = ComponentFinder.find_element(html, ".title")
+    assert soup is not None
+    assert "Welcome" in soup.text
     
-    assert '<h1 id="main-header">' in html
-    assert '<h2 id="sub-header-1">' in html
-    assert '<h2 id="sub-header-2">' in html
-    assert '<h3 id="deep-header">' in html
-    assert '<h2 id="sub-header-1-1">' in html  # Second instance gets -1 suffix
-
-def test_image_rendering():
-    """Test image rendering with various configurations."""
-    markdown = "![Alt Text](pyxie:test/800/600)\n\n![Placeholder](placeholder)\n\n![With Title](https://example.com/image.jpg \"Image Title\")"
-    html = render_markdown(markdown)
+    soup = ComponentFinder.find_element(html, ".content")
+    assert soup is not None
+    assert "Main" in soup.text
+    assert "formatting" in soup.text
     
-    assert 'src="https://picsum.photos/seed/test/800/600"' in html
-    assert 'src="https://picsum.photos/seed/placeholder/800/600"' in html
-    assert 'src="https://example.com/image.jpg"' in html
-    assert 'title="Image Title"' in html
+    soup = ComponentFinder.find_element(html, ".sidebar")
+    assert soup is not None
+    assert "Item 1" in soup.text
+    assert "Item 2" in soup.text
 
-def test_image_placeholder_rendering():
-    """Test image placeholder rendering."""
-    from pyxie.renderer import render_markdown
+def test_complex_nested_content():
+    """Test rendering of complex nested content."""
+    content = """# Section 1
+## Subsection
+- List item 1
+  - Nested item
+    ```python
+    def test():
+        return "nested"
+    ```
+- List item 2
+"""
+    block = ContentBlock(tag_name="content", content=content, attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={},
+        blocks={"content": [block]}
+    )
+    html = render_content(item)
     
-    # Test basic placeholder
-    markdown = "![Test](pyxie:test)"
-    html = render_markdown(markdown)
-    assert 'src="https://picsum.photos/seed/test/800/600"' in html
+    # Check for content presence rather than exact HTML format
+    assert "Section 1" in html
+    assert "Subsection" in html
+    assert "List item 1" in html
+    assert "Nested item" in html
+    assert "def test" in html
+    assert ("return \"nested\"" in html or "return &quot;nested&quot;" in html)
+    assert "List item 2" in html
+
+def test_comprehensive_error_handling():
+    """Test various error handling cases."""
+    # Test empty content
+    block = ContentBlock(tag_name="content", content="", attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={},
+        blocks={"content": [block]}
+    )
+    html = render_content(item)
+    assert html.strip() == "<div></div>"  # Empty content renders as empty div due to layout
     
-    # Test custom dimensions
-    markdown = "![Test](pyxie:test/400/300)"
-    html = render_markdown(markdown)
-    assert 'src="https://picsum.photos/seed/test/400/300"' in html
+    # Test malformed HTML in markdown
+    block = ContentBlock(tag_name="content", content="<unclosed>test", attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={},
+        blocks={"content": [block]}
+    )
+    html = render_content(item)
+    assert "&lt;unclosed&gt;" in html  # HTML is properly escaped
+    assert "test" in html
+
+def test_markdown_rendering():
+    """Test that markdown content is rendered correctly."""
+    content = """
+# Test Header
+
+## Another Header
+
+This is a paragraph with **bold** and *italic* text.
+
+- List item 1
+- List item 2
+
+1. Numbered item 1
+2. Numbered item 2
+
+> Blockquote
+
+`inline code`
+
+```python
+def hello():
+    print("Hello, World!")
+```
+"""
+    block = ContentBlock(tag_name="content", content=content, attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={},
+        blocks={"content": [block]}
+    )
+    html = render_content(item)
     
-    # Test alt text as seed
-    markdown = "![Mountain View](placeholder)"
-    html = render_markdown(markdown)
-    assert 'src="https://picsum.photos/seed/mountain-view/800/600"' in html
+    assert '<h1 id="test-header">Test Header</h1>' in html
+    assert '<h2 id="another-header">Another Header</h2>' in html
+    assert '<strong>bold</strong>' in html
+    assert '<em>italic</em>' in html
+    assert '<li>List item 1</li>' in html
+    assert '<li>Numbered item 1</li>' in html
+    assert '<blockquote>' in html
+    assert '<code>inline code</code>' in html
+    assert '<pre><code class="language-python">' in html
 
-def test_markdown_rendering_with_placeholders():
-    """Test complete markdown rendering with image placeholders."""
-    from pyxie.renderer import render_markdown
-    
-    # Test markdown with a placeholder image
-    markdown = """
-# Testing Image Placeholders
-
-Here's a placeholder image:
-
-![Mountain view](pyxie:mountain)
-
-And one with custom dimensions:
-
-![Lake view](pyxie:lake/1200/500)
-
-And one with the simple syntax:
-
-![Forest path](placeholder)
+def test_fasthtml_rendering():
+    """Test that FastHTML blocks are rendered correctly."""
+    content = """
+    <fasthtml>
+show(Div("Hello World", cls="test-class"))
+    </fasthtml>
     """
-    
-    # Render the markdown to HTML
-    html = render_markdown(markdown)
-    
-    # Check that the placeholders were processed correctly
-    assert 'https://picsum.photos/seed/mountain/800/600' in html
-    assert 'https://picsum.photos/seed/lake/1200/500' in html
-    assert 'https://picsum.photos/seed/forest-path/800/600' in html
-    
-    # Check that the HTML structure is correct
-    assert '<h1 id="testing-image-placeholders">Testing Image Placeholders</h1>' in html
-    assert '<p>Here\'s a placeholder image:</p>' in html
+    block = ContentBlock(tag_name="content", content=content, attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={},
+        blocks={"content": [block]}
+    )
+    html = render_content(item)
+    assert '<div class="test-class">Hello World</div>' in html
 
-def test_self_closing_tags_rendering():
-    """Test that self-closing tags like <br>, <img>, etc. are rendered correctly."""
-    # Test markdown with self-closing tags
-    markdown = "Line one<br>Line two\n\n<img src='test.jpg'>\n\n<hr>\n\n<input type='text'>"
-    html = render_markdown(markdown)
-    
-    # Check that the self-closing tags are present in the rendered HTML
-    assert "<br>" in html
-    assert "<img" in html
-    assert "<hr>" in html
-    assert "<input" in html
-    
-    # Test in a layout with conditional visibility
-    html_with_tags = """
-    <div data-pyxie-show="content">
-        <p>Line one<br>Line two</p>
-        <img src='test.jpg'>
-        <hr>
-        <input type='text'>
-    </div>
-    """
-    
-    result = process_conditional_visibility(html_with_tags, {"content"})
-    
-    # Check that all self-closing tags are preserved after processing
-    assert "<br>" in result
-    assert "<img" in result
-    assert "<hr>" in result
-    assert "<input" in result
+def test_script_tag_rendering():
+    """Test that script tags are rendered correctly."""
+    content = """
+<fasthtml>
+show(Script('console.log("Hello World");'))
+</fasthtml>
+"""
+    block = ContentBlock(tag_name="content", content=content, attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={},
+        blocks={"content": [block]}
+    )
+    html = render_content(item)
+    assert 'console.log("Hello World");' in html
+    assert '<script>' in html
+    assert '</script>' in html
 
-def test_fasthtml_token_recognition():
-    """Test that FastHTML blocks are recognized and preserved during markdown processing."""
-    # Create a FastHTML block with our special marker format
-    fasthtml_content = f"{EXECUTABLE_MARKER_START}show('Hello world'){EXECUTABLE_MARKER_END}"
-    markdown = f"# Header\n\n{fasthtml_content}\n\n- List item"
-    html = render_markdown(markdown)
-    
-    # Check that the FastHTML content was correctly processed
-    assert '<h1 id="header">Header</h1>' in html
-    assert 'Hello world' in html
-    assert '<li>List item</li>' in html
-    # Ensure no paragraph tags were inserted inside FastHTML content
-    assert '<p><fasthtml>' not in html
-
-def test_fasthtml_content_preservation():
-    """Test that FastHTML content is preserved exactly as is."""
-    # Create a FastHTML block with our special marker format - use show() to display the result
-    fasthtml_content = f"{EXECUTABLE_MARKER_START}def function():\n    # This is a comment\n    return 'test'\n\nshow(function()){EXECUTABLE_MARKER_END}"
-    markdown = fasthtml_content
-    html = render_markdown(markdown)
-    
-    # Check that content is processed correctly and syntax is preserved
-    assert 'test' in html
-    
-def test_fasthtml_code_execution():
-    """Test that FastHTML code is executed properly."""
-    # Create a FastHTML block with our special marker format
-    fasthtml_content = f"{EXECUTABLE_MARKER_START}show(f'The result is: {{1 + 2}}'){EXECUTABLE_MARKER_END}"
-    markdown = fasthtml_content
-    html = render_markdown(markdown)
-    
-    # Check that the code was executed and output is rendered
-    assert 'The result is: 3' in html
-    
-def test_mixed_markdown_and_fasthtml():
-    """Test a mix of markdown and FastHTML content."""
-    # Create a FastHTML block with our special marker format
-    fasthtml_content = f"{EXECUTABLE_MARKER_START}\nfrom fastcore.xml import Div, P\nshow(Div(P(\"This is generated content\"), cls=\"generated\"))\n{EXECUTABLE_MARKER_END}"
-    
-    markdown = f"""
+def test_mixed_content():
+    """Test rendering of mixed content types."""
+    content = """
 # Title
 
-Regular paragraph with *emphasis* and **strong** text.
+<fasthtml>
+show(Div("FastHTML content"))
+</fasthtml>
 
-{fasthtml_content}
+<fasthtml>
+show(Script('console.log("Script content");'))
+</fasthtml>
 
-1. Ordered list
-2. Second item
+## Subtitle
 
-> Blockquote content
-    """
-    html = render_markdown(markdown)
+Regular markdown content.
+"""
+    block = ContentBlock(tag_name="content", content=content, attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={},
+        blocks={"content": [block]}
+    )
+    html = render_content(item)
     
-    # Check that markdown is rendered correctly
     assert '<h1 id="title">Title</h1>' in html
-    assert '<em>emphasis</em>' in html
-    assert '<strong>strong</strong>' in html
-    
-    # Check that FastHTML content is executed and rendered
-    assert '<div class="generated">' in html
-    assert '<p>This is generated content</p>' in html
-    
-    # Check that markdown after FastHTML is rendered correctly
-    assert '<ol>' in html
-    assert '<li>Ordered list</li>' in html
-    assert '<blockquote>' in html 
+    assert '<div>FastHTML content</div>' in html
+    assert 'console.log("Script content");' in html
+    assert '<script>' in html
+    assert '</script>' in html
+    assert '<h2 id="subtitle">Subtitle</h2>' in html
+    assert '<p>Regular markdown content.</p>' in html
+
+def test_error_handling():
+    """Test that rendering errors are handled gracefully."""
+    content = """
+<fasthtml>
+show(UndefinedComponent())
+</fasthtml>
+"""
+    block = ContentBlock(tag_name="content", content=content, attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={},
+        blocks={"content": [block]}
+    )
+    html = render_content(item)
+    assert 'ERROR: NAME \'UNDEFINEDCOMPONENT\' IS NOT DEFINED' in html.upper()
+    assert 'fasthtml-error' in html
+
+def test_layout_rendering():
+    """Test that content with layouts is rendered correctly."""
+    content = """
+# Content Title
+Regular content
+"""
+    block = ContentBlock(tag_name="content", content=content, attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={"layout": "page", "title": "Test Page"},
+        blocks={"content": [block]}
+    )
+    html = render_content(item)
+    assert '<h1 id="content-title">Content Title</h1>' in html
+    assert '<p>Regular content</p>' in html
+    assert 'Header' in html
+    assert 'Footer' in html
+
+def test_conditional_rendering():
+    """Test that conditional rendering works correctly."""
+    content = """
+<fasthtml>
+if True:
+    show(Div("Visible content"))
+else:
+    show(Div("Hidden content"))
+</fasthtml>
+"""
+    block = ContentBlock(tag_name="content", content=content, attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={},
+        blocks={"content": [block]}
+    )
+    html = render_content(item)
+    assert '<div>Visible content</div>' in html
+    assert 'Hidden content' not in html 

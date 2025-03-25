@@ -3,9 +3,10 @@
 import pytest
 from typing import List, Dict, Any, Optional, TypedDict
 from datetime import datetime
+from pathlib import Path
 
 from pyxie.query import Query, QueryResult
-from pyxie.types import ContentItem
+from pyxie.types import ContentItem, ContentBlock
 
 # Type definitions for filter arguments
 class FilterKwargs(TypedDict, total=False):
@@ -19,11 +20,14 @@ class FilterKwargs(TypedDict, total=False):
 def create_content_item(slug: str, metadata: Dict[str, Any]) -> ContentItem:
     """Create a ContentItem with the given metadata."""
     return ContentItem(
-        slug=slug,
-        content="# Test Content",
+        source_path=Path(f"{slug}.md"),
         metadata=metadata,
-        source_path=None,
-        index=0
+        blocks={"content": [ContentBlock(
+            tag_name="markdown",
+            content="# Test Content",
+            attrs_str="",
+            content_type="markdown"
+        )]}
     )
 
 # Test fixtures

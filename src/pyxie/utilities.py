@@ -26,11 +26,22 @@ import hashlib
 import importlib.util
 import os
 import re
+from dataclasses import dataclass
 
 # Import constants from constants module to avoid circular imports
 from .constants import COMMON_DATE_FORMATS, RequiredMetadata
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class RenderResult:
+    """Result of rendering content."""
+    content: str = ""
+    error: Optional[str] = None
+
+def format_error_html(error_type: str, message: str) -> str:
+    """Format an error message as HTML."""
+    return f'<div class="fasthtml-error">ERROR: {error_type.upper()}: {message}</div>'
 
 def log(logger_instance: logging.Logger, module: str, level: str, operation: str, message: str, file_path: Optional[Path] = None) -> None:
     """Log message with standardized format."""
@@ -193,22 +204,27 @@ def _prepare_content_item(
     default_metadata: Optional[Dict[str, Any]] = None
 ) -> Any:
     """Create a ContentItem from parsed content with appropriate metadata."""
-    from .types import ContentItem
+    from .types import ContentItem, ContentBlock
         
     metadata = {}
     if parsed.metadata:
         metadata.update(parsed.metadata)
     if default_metadata:
         metadata = merge_metadata(default_metadata, metadata)
-        
-    slug = metadata.get("slug", file_path.stem)
+    
+    blocks = getattr(parsed, 'blocks', {})
+    if not blocks:
+        blocks = {"content": [ContentBlock(
+            tag_name="markdown",
+            content=parsed.raw_content,
+            attrs_str="",
+            content_type="markdown"
+        )]}
     
     return ContentItem(
-        slug=slug,
-        content=content,
+        source_path=file_path,
         metadata=metadata,
-        blocks=getattr(parsed, 'blocks', None),
-        source_path=file_path
+        blocks=blocks
     )
 
 def load_content_file(
@@ -264,26 +280,6 @@ def normalize_tags(tags: Any) -> List[str]:
     if isinstance(tags, str):
         tags = [t.strip() for t in tags.split(",")]
     return sorted(set(str(t).strip().lower() for t in tags if t))
-
-def parse_date(date_str: Optional[str]) -> Optional[datetime]:
-    """Parse a date string using common formats."""
-    if not date_str:
-        return None
-    
-    for fmt in COMMON_DATE_FORMATS:
-        try:
-            return datetime.strptime(date_str, fmt)
-        except ValueError:
-            continue
-    return None
-
-def validate_metadata(metadata: Dict[str, Any]) -> List[str]:
-    """Return a list of missing required metadata fields."""
-    return [
-        field.name.lower() 
-        for field in RequiredMetadata 
-        if not metadata.get(field.name.lower())
-    ]
 
 def get_line_number(text: str, position: int) -> int:
     """Get 1-indexed line number for a character position in text."""
@@ -409,38 +405,4 @@ def parse_html_fragment(content_html: str) -> Any:
     try:
         return html.fragment_fromstring(content_html)
     except Exception:
-        return html.fragment_fromstring(f"<div>{content_html}</div>")
-
-def build_pagination_urls(
-    base_url: str,
-    pagination: Any,
-    tag: Optional[str] = None,
-    params: Optional[Dict[str, str]] = None
-) -> Dict[str, str]:
-    """Generate pagination URLs based on pagination info."""
-    if pagination.total_pages <= 1:
-        return {"current": base_url}
-    
-    def build_url(page: Optional[int]) -> str:
-        if page is None or page < 1 or page > pagination.total_pages:
-            return base_url
-            
-        url_params = {**(params or {})}
-        if page > 1:
-            url_params['page'] = str(page)
-        if tag:
-            url_params['tag'] = tag
-            
-        if not url_params:
-            return base_url
-            
-        return f"{base_url}?{'&'.join(f'{k}={v}' for k, v in url_params.items())}"
-    
-    return {
-        "current": build_url(pagination.current_page),
-        "next": build_url(pagination.next_page),
-        "prev": build_url(pagination.previous_page),
-        "first": build_url(1),
-        "last": build_url(pagination.total_pages),
-        "pages": {p: build_url(p) for p in pagination.page_range()}
-    } 
+        return html.fragment_fromstring(f"<div>{content_html}</div>") 

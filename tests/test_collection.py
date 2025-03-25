@@ -8,7 +8,7 @@ import logging
 from unittest.mock import patch
 from dataclasses import dataclass
 
-from pyxie.types import ContentItem
+from pyxie.types import ContentItem, ContentBlock
 from pyxie.errors import CollectionError
 
 # Mock for parse result - using a structure similar to the real ParsedContent
@@ -17,18 +17,18 @@ class MockParsedContent:
     """Mock for parsed content."""
     content: str
     metadata: Dict[str, Any]
-    blocks: Dict[str, Any] = None
+    blocks: Dict[str, list[ContentBlock]] = None
     
-    def get_block(self, name: str) -> Optional[Any]:
+    def get_block(self, name: str) -> Optional[ContentBlock]:
         """Get a block by name."""
         if self.blocks and name in self.blocks:
-            return self.blocks[name]
+            return self.blocks[name][0]
         return None
     
-    def get_blocks(self, name: str) -> list:
+    def get_blocks(self, name: str) -> list[ContentBlock]:
         """Get all blocks with the given name."""
         if self.blocks and name in self.blocks:
-            return [self.blocks[name]]
+            return self.blocks[name]
         return []
 
 # Create a single mock function to be used throughout the tests
@@ -50,11 +50,22 @@ def mock_parse_function(content: str, file_path=None) -> MockParsedContent:
                 key, value = line.split(":", 1)
                 metadata[key.strip()] = value.strip()
     
+    # Create content block
+    content_text = "\n".join(lines[content_start:])
+    blocks = {
+        "content": [ContentBlock(
+            tag_name="markdown",
+            content=content_text,
+            attrs_str="",
+            content_type="markdown"
+        )]
+    } if content_text.strip() else {}
+    
     # Return mock parsed content
     return MockParsedContent(
-        content="\n".join(lines[content_start:]),
+        content=content_text,
         metadata=metadata,
-        blocks={}
+        blocks=blocks
     )
 
 # Patch module imports before importing Collection
@@ -67,7 +78,6 @@ def mock_parse(monkeypatch) -> Callable[[str], MockParsedContent]:
     """Mock the parse function."""
     # Apply the monkeypatch using our existing mock function
     import pyxie.parser
-    # Set the mock in the parser module
     monkeypatch.setattr(pyxie.parser, "parse", mock_parse_function)
     return mock_parse_function
 
@@ -122,26 +132,29 @@ def create_test_files(test_dir: Path, mock_parse) -> Dict[str, Path]:
             "title": "First Post",
             "status": "published",
             "date": "2024-01-01",
-            "tags": "python, testing"
+            "tags": ["python", "testing"]
         },
         "post2": {
             "title": "Second Post",
             "status": "draft",
             "date": "2024-01-02",
-            "tags": "python, tutorial"
+            "tags": ["python", "tutorial"]
         },
         "post3": {
             "title": "Third Post",
             "status": "published",
             "date": "2024-01-03",
-            "tags": "python, advanced"
+            "tags": ["python", "advanced"]
         }
     }
     
     for slug, metadata in sample_content.items():
         content = "---\n"
         for key, value in metadata.items():
-            content += f"{key}: {value}\n"
+            if isinstance(value, list):
+                content += f"{key}: {', '.join(value)}\n"
+            else:
+                content += f"{key}: {value}\n"
         content += "---\n\n"
         content += f"# {metadata['title']}\n\nTest content for {slug}"
         
@@ -162,7 +175,6 @@ def collection(test_dir: Path, create_test_files: Dict[str, Path], mock_parse) -
     collection.load()
     return collection
 
-# Test initialization
 def test_collection_init():
     """Test collection initialization."""
     with patch('pyxie.parser.parse', mock_parse_function):
@@ -182,7 +194,6 @@ def test_collection_init():
         )
         assert collection.default_metadata == {"layout": "default"}
 
-# Test loading content
 def test_collection_load(test_dir: Path, create_test_files: Dict[str, Path], mock_parse):
     """Test loading content from files."""
     collection = Collection(name="test", path=test_dir)
@@ -268,7 +279,6 @@ def test_collection_load_with_invalid_file(test_dir: Path, create_test_files: Di
     assert len(collection) == len(create_test_files) + 1  # All valid files plus the invalid one
     assert "invalid" in collection  # The invalid file should be loaded
 
-# Test collection methods
 def test_collection_len(collection: Collection):
     """Test the __len__ method."""
     assert len(collection) == 3
@@ -297,7 +307,6 @@ def test_get_item(collection: Collection):
     # Non-existent item
     assert collection.get_item("nonexistent") is None
 
-# Test filtering and sorting
 def test_get_items_basic(collection: Collection):
     """Test basic item retrieval without filters."""
     items = collection.get_items()
@@ -465,8 +474,8 @@ def test_default_layout_precedence(mock_parse, sample_content):
     collection2.load()
     
     # Check that metadata["layout"] was preserved as the layout
-    # Note: in Collection._load_file, it still applies default_layout, but we're checking Pyxie behavior 
-    # more thoroughly in other tests
+    for item in collection2:
+        assert item.metadata["layout"] == "metadata_layout"
 
 def test_error_handling(mock_parse, temp_dir, caplog):
     """Test error handling when loading malformed content."""

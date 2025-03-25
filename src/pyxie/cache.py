@@ -18,7 +18,7 @@ import sqlite3
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Protocol
 from contextlib import contextmanager
 
 from .errors import PyxieError
@@ -44,6 +44,17 @@ CREATE INDEX IF NOT EXISTS idx_cache_path ON cache(file_path);
 class CacheError(PyxieError):
     """Base class for cache-related errors."""
     pass
+
+class CacheProtocol(Protocol):
+    """Protocol defining the interface for a content cache."""
+    
+    def get(self, collection: str, path: str, layout_name: Optional[str] = None) -> Optional[str]:
+        """Get content from cache."""
+        ...
+        
+    def store(self, collection: str, path: str, content: str, layout_name: Optional[str] = None) -> None:
+        """Store content in cache."""
+        ...
 
 class Cache:
     """SQLite-based cache for rendered HTML content."""

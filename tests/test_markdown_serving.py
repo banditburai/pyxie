@@ -7,7 +7,7 @@ import pytest
 from starlette.responses import Response
 
 from pyxie import Pyxie
-from pyxie.types import ContentItem
+from pyxie.types import ContentItem, ContentBlock
 
 
 @pytest.fixture
@@ -30,14 +30,18 @@ def pyxie_instance(test_md_file):
     
     # Create a mock item that will be returned by get_item
     mock_item = ContentItem(
-        slug="test-post",
-        content="# Test Content\n\nThis is test markdown content.",
         source_path=test_md_file,
         metadata={
             "title": "Test Post",
             "tags": ["test"],
             "date": "2025-03-14"
-        }
+        },
+        blocks={"content": [ContentBlock(
+            tag_name="markdown",
+            content="# Test Content\n\nThis is test markdown content.",
+            attrs_str="",
+            content_type="markdown"
+        )]}
     )
     
     # Create a mock for the get_item method
@@ -46,10 +50,14 @@ def pyxie_instance(test_md_file):
             return mock_item, None
         elif slug == "no-source":
             no_source_item = ContentItem(
-                slug="no-source",
-                content="No source content",
                 source_path=None,
-                metadata={"title": "No Source"}
+                metadata={"title": "No Source"},
+                blocks={"content": [ContentBlock(
+                    tag_name="markdown",
+                    content="No source content",
+                    attrs_str="",
+                    content_type="markdown"
+                )]}
             )
             return no_source_item, None
         else:
