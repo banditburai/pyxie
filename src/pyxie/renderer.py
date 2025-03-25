@@ -164,6 +164,13 @@ def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = 
     
     if layout := get_layout(layout_name):
         sig = inspect.signature(layout.func)
+        params = list(sig.parameters.values())
+        
+        # If the layout function expects a single 'metadata' parameter, pass the entire metadata dict
+        if len(params) == 1 and params[0].name == 'metadata':
+            return None, layout.create(metadata=item.metadata), None
+            
+        # Otherwise, filter metadata to match the function's parameters
         metadata = {k: v for k, v in item.metadata.items() if k != "layout" and k in sig.parameters}
         return None, layout.create(**metadata), None
     
