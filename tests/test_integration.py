@@ -12,7 +12,6 @@ from pyxie.renderer import render_content
 from pyxie.parser import parse, FastHTMLToken, ScriptToken, ContentBlockToken
 from mistletoe.block_token import add_token
 from pyxie.types import ContentItem, ContentBlock
-from pyxie.utilities import _prepare_content_item
 
 # Helper functions
 def create_test_post(dir_path: Path, filename: str, content: str) -> Path:

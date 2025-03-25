@@ -216,7 +216,7 @@ def _prepare_content_item(
     if not blocks:
         blocks = {"content": [ContentBlock(
             tag_name="markdown",
-            content=parsed.raw_content,
+            content=content,
             attrs_str="",
             content_type="markdown"
         )]}
@@ -231,7 +231,7 @@ def load_content_file(
     file_path: Path, 
     default_metadata: Optional[Dict[str, Any]] = None,
     logger_instance: Optional[logging.Logger] = None,
-    parse_func: Optional[Callable] = None
+    parse_func: Optional[Callable[[str, Path], Any]] = None
 ) -> Optional[Any]:
     """Load and parse a content file, creating a ContentItem object."""
     try:

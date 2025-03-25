@@ -33,32 +33,20 @@ from .collection import Collection
 
 __version__ = "0.1.2"
 
-# Add html property directly to ContentItem
+# Add html property and render method to ContentItem
 # This avoids circular imports while keeping the API clean
 def _get_html(self):
-    from .utilities import log
-    import logging
-    logger = logging.getLogger(__name__)
-    log(logger, "ContentItem", "debug", "html", f"Getting HTML for {self.slug}")
-    log(logger, "ContentItem", "debug", "html", f"Metadata: {self.metadata}")
-    log(logger, "ContentItem", "debug", "html", f"Available blocks: {list(self.blocks.keys())}")
+    from .renderer import render_content
     try:
-        from .renderer import render_content
-        result = render_content(self, self._cache)
-        log(logger, "ContentItem", "debug", "html", f"Got HTML result length: {len(result)}")
-        return result
+        return render_content(self, getattr(self, '_cache', None))
     except Exception as e:
-        log(logger, "ContentItem", "error", "html", f"Error rendering HTML: {e}")
         return f"<div>Error: {e}</div>"
-
-ContentItem.html = property(_get_html)
 
 def _render_for_fasthtml(self):
     from fasthtml.common import NotStr
-    if hasattr(self, 'html'):
-        return NotStr(self.html)
-    return None
+    return NotStr(self.html) if hasattr(self, 'html') else None
 
+ContentItem.html = property(_get_html)
 ContentItem.render = _render_for_fasthtml
 
 __all__ = [

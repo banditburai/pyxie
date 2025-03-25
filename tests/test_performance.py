@@ -11,7 +11,6 @@ from pathlib import Path
 from pyxie.parser import parse, FastHTMLToken, ScriptToken, ContentBlockToken
 from pyxie.slots import fill_slots
 from pyxie.renderer import render_content
-from pyxie.utilities import _prepare_content_item
 from fastcore.xml import Div, P, FT
 from mistletoe.block_token import add_token
 from pyxie.types import ContentItem, ContentBlock
