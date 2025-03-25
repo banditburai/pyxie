@@ -40,8 +40,16 @@ def _get_html(self):
     import logging
     logger = logging.getLogger(__name__)
     log(logger, "ContentItem", "debug", "html", f"Getting HTML for {self.slug}")
-    from .renderer import render_content
-    return render_content(self, self._cache)
+    log(logger, "ContentItem", "debug", "html", f"Metadata: {self.metadata}")
+    log(logger, "ContentItem", "debug", "html", f"Available blocks: {list(self.blocks.keys())}")
+    try:
+        from .renderer import render_content
+        result = render_content(self, self._cache)
+        log(logger, "ContentItem", "debug", "html", f"Got HTML result length: {len(result)}")
+        return result
+    except Exception as e:
+        log(logger, "ContentItem", "error", "html", f"Error rendering HTML: {e}")
+        return f"<div>Error: {e}</div>"
 
 ContentItem.html = property(_get_html)
 
