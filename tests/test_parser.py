@@ -7,8 +7,7 @@ from typing import Dict, Any
 from mistletoe import Document
 from fastcore.xml import FT, Div
 
-from pyxie.parser import parse
-from pyxie.types import MarkdownDocument
+from pyxie.parser import parse_frontmatter
 from pyxie.constants import DEFAULT_METADATA
 
 @pytest.fixture
@@ -40,13 +39,17 @@ This is a content block
 
 def test_frontmatter_parsing(sample_markdown: str) -> None:
     """Test that frontmatter is correctly parsed."""
-    parsed = parse(sample_markdown)
+    metadata, content = parse_frontmatter(sample_markdown)
     
     # Check metadata fields
-    assert parsed.metadata['title'] == 'Test Document'
-    assert parsed.metadata['author'] == 'Test Author'
-    assert parsed.metadata['date'] == date(2024, 1, 1)  # Date is parsed as datetime.date
-    assert parsed.metadata['tags'] == ['test', 'sample']
+    assert metadata['title'] == 'Test Document'
+    assert metadata['author'] == 'Test Author'
+    assert metadata['date'] == date(2024, 1, 1)  # Date is parsed as datetime.date
+    assert metadata['tags'] == ['test', 'sample']
+    
+    # Check content
+    assert '# Introduction' in content
+    assert 'This is a test document with various content types.' in content
 
 def test_empty_frontmatter() -> None:
     """Test handling of empty frontmatter."""
@@ -54,16 +57,14 @@ def test_empty_frontmatter() -> None:
 ---
 # Content after empty frontmatter'''
     
-    parsed = parse(content)
-    assert isinstance(parsed, MarkdownDocument)
-    assert parsed.metadata == DEFAULT_METADATA  # Empty frontmatter uses defaults
-    assert '# Content after empty frontmatter' in parsed.raw_content
+    metadata, remaining_content = parse_frontmatter(content)    
+    assert metadata == {}  # Empty frontmatter returns empty dict
+    assert '# Content after empty frontmatter' in remaining_content
 
 def test_no_frontmatter() -> None:
     """Test handling of content without frontmatter."""
     content = '# Content without frontmatter'
     
-    parsed = parse(content)
-    assert isinstance(parsed, MarkdownDocument)
-    assert parsed.metadata == DEFAULT_METADATA  # No frontmatter uses defaults
-    assert content == parsed.raw_content 
+    metadata, remaining_content = parse_frontmatter(content)
+    assert metadata == {}  # No frontmatter returns empty dict
+    assert content == remaining_content 

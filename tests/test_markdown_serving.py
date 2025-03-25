@@ -39,8 +39,7 @@ def pyxie_instance(test_md_file):
         blocks={"content": [ContentBlock(
             tag_name="markdown",
             content="# Test Content\n\nThis is test markdown content.",
-            attrs_str="",
-            content_type="markdown"
+            attrs_str="",            
         )]}
     )
     
@@ -55,8 +54,7 @@ def pyxie_instance(test_md_file):
                 blocks={"content": [ContentBlock(
                     tag_name="markdown",
                     content="No source content",
-                    attrs_str="",
-                    content_type="markdown"
+                    attrs_str="",                    
                 )]}
             )
             return no_source_item, None

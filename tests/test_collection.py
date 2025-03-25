@@ -7,9 +7,11 @@ from typing import Dict, Any, Optional, Generator, Callable
 import logging
 from unittest.mock import patch
 from dataclasses import dataclass
+from datetime import date
 
 from pyxie.types import ContentItem, ContentBlock
 from pyxie.errors import CollectionError
+from pyxie.parser import parse_frontmatter
 
 # Mock for parse result - using a structure similar to the real ParsedContent
 @dataclass
@@ -32,8 +34,8 @@ class MockParsedContent:
         return []
 
 # Create a single mock function to be used throughout the tests
-def mock_parse_function(content: str, file_path=None) -> MockParsedContent:
-    """Mock implementation of the parse function that extracts YAML frontmatter."""
+def mock_parse_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
+    """Mock implementation of parse_frontmatter that extracts YAML frontmatter."""
     lines = content.split("\n")
     metadata = {}
     content_start = 0
@@ -50,36 +52,21 @@ def mock_parse_function(content: str, file_path=None) -> MockParsedContent:
                 key, value = line.split(":", 1)
                 metadata[key.strip()] = value.strip()
     
-    # Create content block
-    content_text = "\n".join(lines[content_start:])
-    blocks = {
-        "content": [ContentBlock(
-            tag_name="markdown",
-            content=content_text,
-            attrs_str="",
-            content_type="markdown"
-        )]
-    } if content_text.strip() else {}
-    
-    # Return mock parsed content
-    return MockParsedContent(
-        content=content_text,
-        metadata=metadata,
-        blocks=blocks
-    )
+    # Return metadata and content
+    return metadata, "\n".join(lines[content_start:])
 
 # Patch module imports before importing Collection
-with patch('pyxie.parser.parse', mock_parse_function):
+with patch('pyxie.parser.parse_frontmatter', mock_parse_frontmatter):
     from pyxie.collection import Collection
 
 # Test fixtures
 @pytest.fixture
-def mock_parse(monkeypatch) -> Callable[[str], MockParsedContent]:
-    """Mock the parse function."""
+def mock_parse(monkeypatch) -> Callable[[str], tuple[Dict[str, Any], str]]:
+    """Mock the parse_frontmatter function."""
     # Apply the monkeypatch using our existing mock function
     import pyxie.parser
-    monkeypatch.setattr(pyxie.parser, "parse", mock_parse_function)
-    return mock_parse_function
+    monkeypatch.setattr(pyxie.parser, "parse_frontmatter", mock_parse_frontmatter)
+    return mock_parse_frontmatter
 
 @pytest.fixture
 def test_dir() -> Generator[Path, None, None]:
@@ -122,7 +109,7 @@ This is a draft post.
     return temp_dir
 
 @pytest.fixture
-def create_test_files(test_dir: Path, mock_parse) -> Dict[str, Path]:
+def create_test_files(test_dir: Path) -> Dict[str, Path]:
     """Create test markdown files in the test directory."""
     file_paths = {}
     
@@ -131,19 +118,19 @@ def create_test_files(test_dir: Path, mock_parse) -> Dict[str, Path]:
         "post1": {
             "title": "First Post",
             "status": "published",
-            "date": "2024-01-01",
+            "date": date(2024, 1, 1),
             "tags": ["python", "testing"]
         },
         "post2": {
             "title": "Second Post",
             "status": "draft",
-            "date": "2024-01-02",
+            "date": date(2024, 1, 2),
             "tags": ["python", "tutorial"]
         },
         "post3": {
             "title": "Third Post",
             "status": "published",
-            "date": "2024-01-03",
+            "date": date(2024, 1, 3),
             "tags": ["python", "advanced"]
         }
     }
@@ -153,6 +140,8 @@ def create_test_files(test_dir: Path, mock_parse) -> Dict[str, Path]:
         for key, value in metadata.items():
             if isinstance(value, list):
                 content += f"{key}: {', '.join(value)}\n"
+            elif isinstance(value, date):
+                content += f"{key}: {value.isoformat()}\n"
             else:
                 content += f"{key}: {value}\n"
         content += "---\n\n"
@@ -165,7 +154,7 @@ def create_test_files(test_dir: Path, mock_parse) -> Dict[str, Path]:
     return file_paths
 
 @pytest.fixture
-def collection(test_dir: Path, create_test_files: Dict[str, Path], mock_parse) -> Collection:
+def collection(test_dir: Path, create_test_files: Dict[str, Path]) -> Collection:
     """Create a test collection with sample content."""
     collection = Collection(
         name="test",
@@ -177,7 +166,7 @@ def collection(test_dir: Path, create_test_files: Dict[str, Path], mock_parse) -
 
 def test_collection_init():
     """Test collection initialization."""
-    with patch('pyxie.parser.parse', mock_parse_function):
+    with patch('pyxie.parser.parse_frontmatter', mock_parse_frontmatter):
         # Basic initialization
         collection = Collection(name="test", path="/tmp/test")
         assert collection.name == "test"
@@ -321,7 +310,7 @@ def test_get_items_with_filter(collection: Collection):
         assert item.metadata["status"] == "published"
     
     # Filter by multiple fields
-    specific = collection.get_items(status="published", date="2024-01-01")
+    specific = collection.get_items(status="published", date=date(2024, 1, 1))
     assert len(specific) == 1
     assert specific[0].metadata["title"] == "First Post"
 
@@ -330,14 +319,14 @@ def test_get_items_with_sorting(collection: Collection):
     # Sort by date (ascending)
     sorted_asc = collection.get_items(order_by="date")
     assert len(sorted_asc) == 3
-    assert sorted_asc[0].metadata["date"] == "2024-01-01"
-    assert sorted_asc[2].metadata["date"] == "2024-01-03"
+    assert sorted_asc[0].metadata["date"] == date(2024, 1, 1)
+    assert sorted_asc[2].metadata["date"] == date(2024, 1, 3)
     
     # Sort by date (descending)
     sorted_desc = collection.get_items(order_by="-date")
     assert len(sorted_desc) == 3
-    assert sorted_desc[0].metadata["date"] == "2024-01-03"
-    assert sorted_desc[2].metadata["date"] == "2024-01-01"
+    assert sorted_desc[0].metadata["date"] == date(2024, 1, 3)
+    assert sorted_desc[2].metadata["date"] == date(2024, 1, 1)
 
 def test_get_items_with_limit(collection: Collection):
     """Test limiting the number of items returned."""
@@ -348,7 +337,7 @@ def test_get_items_with_limit(collection: Collection):
     # Sort and limit
     sorted_limited = collection.get_items(order_by="date", limit=1)
     assert len(sorted_limited) == 1
-    assert sorted_limited[0].metadata["date"] == "2024-01-01"
+    assert sorted_limited[0].metadata["date"] == date(2024, 1, 1)
 
 def test_get_items_combined(collection: Collection):
     """Test combining filtering, sorting, and limiting."""
@@ -359,7 +348,7 @@ def test_get_items_combined(collection: Collection):
     )
     assert len(items) == 1
     assert items[0].metadata["status"] == "published"
-    assert items[0].metadata["date"] == "2024-01-03"
+    assert items[0].metadata["date"] == date(2024, 1, 3)
 
 def test_get_items_filtering(mock_parse, sample_content):
     """Test filtering items."""
@@ -481,13 +470,13 @@ def test_error_handling(mock_parse, temp_dir, caplog):
     """Test error handling when loading malformed content."""
     # Create a file that will cause the mock parser to create invalid metadata
     # Our current mock is too forgiving, so we need to patch it for this test
-    def mock_parse_that_fails(content: str, file_path=None) -> MockParsedContent:
+    def mock_parse_that_fails(content: str) -> tuple[Dict[str, Any], str]:
         # Simulate a parser that fails for this specific content
         if "malformed" in content:
             raise ValueError("Simulated parsing error")
-        return mock_parse_function(content, file_path)
+        return mock_parse_frontmatter(content)
     
-    with patch('pyxie.parser.parse', mock_parse_that_fails):
+    with patch('pyxie.parser.parse_frontmatter', mock_parse_that_fails):
         # Create malformed file
         bad_file = temp_dir / "bad.md"
         bad_file.write_text("This is malformed content")
@@ -502,7 +491,7 @@ def test_error_handling(mock_parse, temp_dir, caplog):
         assert "Failed to load" in caplog.text
         
         # The collection should be empty since the file couldn't be loaded
-        assert len(collection) == 0 
+        assert len(collection) == 0
 
 def test_collection_reference_on_items(mock_parse, sample_content):
     """Test that ContentItem instances have the correct collection name set."""

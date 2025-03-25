@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 from mistletoe.block_token import add_token
-from pyxie.parser import parse, FastHTMLToken, ScriptToken, ContentBlockToken
+from pyxie.parser import parse_frontmatter, FastHTMLToken, ScriptToken, ContentBlockToken
 from pyxie.types import ContentItem, ContentBlock
 from pyxie.renderer import render_content
 from pyxie.layouts import layout
@@ -147,7 +147,7 @@ def test_quick_start_guide_parsing():
         print(QUICK_START_CONTENT[content_end-100:content_end])
     
     # Parse the content
-    parsed = parse(QUICK_START_CONTENT)
+    metadata, content = parse_frontmatter(QUICK_START_CONTENT)
     
     # Create content blocks manually
     blocks = {
@@ -259,20 +259,20 @@ Check out our [documentation](https://pyxie.dev/docs) or join our [community](ht
     # Create content item
     content_item = ContentItem(
         source_path=Path("quick-start.md"),
-        metadata=parsed.metadata,
+        metadata=metadata,
         blocks=blocks
     )
     
     # Test frontmatter
-    assert parsed.metadata["title"] == "Quick Start Guide: Build Your First Pyxie Site"
+    assert metadata["title"] == "Quick Start Guide: Build Your First Pyxie Site"
     
     # Verify the date - it could be a datetime or date object
-    date_value = parsed.metadata["date"]
+    date_value = metadata["date"]
     # We just want to verify the date part is correct
     assert str(date_value).startswith("2024-03-20")
     
-    assert parsed.metadata["layout"] == "basic"
-    assert parsed.metadata["author"] == "Pyxie Team"
+    assert metadata["layout"] == "basic"
+    assert metadata["author"] == "Pyxie Team"
     
     # Test content blocks
     assert set(content_item.blocks.keys()) == {"featured_image", "toc", "content", "conclusion"}
@@ -332,7 +332,7 @@ Check out our [documentation](https://pyxie.dev/docs) or join our [community](ht
 def test_quick_start_guide_rendering():
     """Test rendering of the quick start guide content."""
     # Parse the content
-    parsed = parse(QUICK_START_CONTENT)
+    metadata, content = parse_frontmatter(QUICK_START_CONTENT)
     
     # Create content blocks
     blocks = {
@@ -427,7 +427,7 @@ console.log("Hello from Pyxie!");
     # Create content item
     item = ContentItem(
         source_path=Path("quick-start.md"),
-        metadata=parsed.metadata,
+        metadata=metadata,
         blocks=blocks
     )
     

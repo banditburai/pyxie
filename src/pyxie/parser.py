@@ -21,7 +21,6 @@ import yaml
 
 from mistletoe.block_token import BlockToken
 from .constants import DEFAULT_METADATA, SELF_CLOSING_TAGS
-from .types import MarkdownDocument
 from .utilities import log, get_line_number, convert_value
 
 logger = logging.getLogger(__name__)
@@ -109,7 +108,7 @@ class ContentBlockToken(BlockToken):
     """Token for HTML-like content blocks."""    
     pattern = re.compile(r'<(?!(?:ft|fasthtml|script)(?:\s|>))([a-zA-Z][\w-]*)(?:\s+([^>]*))?>(.*?)</\1>', re.DOTALL)
     priority = 15  # Higher priority than HTML blocks (10)
-    parse_inner = False
+    parse_inner = True 
     
     def __init__(self, match):
         self.tag_name = match.group(1)
@@ -175,8 +174,3 @@ def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
                 if line.strip() and not line.startswith('#') and ':' in line 
                 for k, v in [line.split(':', 1)] 
                 if k.strip() and ':' not in k}, remaining_content
-
-def parse(content: str, filename: Optional[str] = None) -> MarkdownDocument:
-    """Parse markdown content with frontmatter."""
-    metadata, raw_content = parse_frontmatter(content)
-    return MarkdownDocument(metadata=DEFAULT_METADATA | metadata, raw_content=raw_content)

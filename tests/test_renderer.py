@@ -8,6 +8,7 @@ from pyxie.layouts import layout, registry
 from fastcore.xml import FT, Div
 from tests.utils import ComponentFinder
 from typing import List
+from pyxie.parser import parse_frontmatter
 
 @pytest.fixture(autouse=True)
 def setup_test_layout():
@@ -129,8 +130,8 @@ def test_complex_nested_content():
     assert ("return \"nested\"" in html or "return &quot;nested&quot;" in html)
     assert "List item 2" in html
 
-def test_comprehensive_error_handling():
-    """Test various error handling cases."""
+def test_content_handling():
+    """Test various content handling cases including empty content and HTML preservation."""
     # Test empty content
     block = ContentBlock(tag_name="content", content="", attrs_str="")
     item = ContentItem(
@@ -141,16 +142,41 @@ def test_comprehensive_error_handling():
     html = render_content(item)
     assert html.strip() == "<div></div>"  # Empty content renders as empty div due to layout
     
-    # Test malformed HTML in markdown
-    block = ContentBlock(tag_name="content", content="<unclosed>test", attrs_str="")
+    # Test HTML in markdown content is preserved
+    content = """---
+title: Test
+---
+
+<script>alert('xss')</script>
+"""
+    metadata, content = parse_frontmatter(content)
+    block = ContentBlock(tag_name="content", content=content, attrs_str="")
     item = ContentItem(
         source_path=Path("test.md"),
-        metadata={},
+        metadata=metadata,
         blocks={"content": [block]}
     )
     html = render_content(item)
-    assert "&lt;unclosed&gt;" in html  # HTML is properly escaped
-    assert "test" in html
+    assert "<script>" in html  # HTML is preserved
+    assert "alert('xss')" in html
+    
+    # Test malformed HTML in markdown content
+    content = """---
+title: Test
+---
+
+<div>Unclosed div
+"""
+    metadata, content = parse_frontmatter(content)
+    block = ContentBlock(tag_name="content", content=content, attrs_str="")
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata=metadata,
+        blocks={"content": [block]}
+    )
+    html = render_content(item)
+    assert "<div>" in html  # HTML is preserved
+    assert "Unclosed div" in html
 
 def test_markdown_rendering():
     """Test that markdown content is rendered correctly."""

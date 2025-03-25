@@ -27,6 +27,7 @@ from pyxie.utilities import (
     
     # Module loading utilities
     safe_import,
+    load_content_file,
 )
 
 from pyxie.errors import format_error_html
@@ -407,30 +408,29 @@ class TestModuleImportUtilities:
 
     def test_custom_slug_in_frontmatter(self, tmp_path):
         """Test that custom slugs in frontmatter override the filename-based slug."""
-        from pyxie.utilities import _prepare_content_item
-        
         # Create a test file with a custom slug in frontmatter
-        file_path = tmp_path / "test-file.md"
+        test_file = tmp_path / "test.md"
+        test_file.write_text("""---
+title: Test Post
+slug: custom-slug
+---
+Content here
+""")
         
-        # Mock parsed data with a custom slug in metadata
-        class MockParsed:
-            def __init__(self):
-                self.metadata = {"slug": "custom-slug", "title": "Test Title"}
-                self.raw_content = "Test content"
-                self.blocks = {}
+        # Load the content
+        item = load_content_file(test_file)
+        assert item is not None
+        assert item.slug == "custom-slug"  # Should use the custom slug from frontmatter
         
-        # Create a content item
-        content_item = _prepare_content_item(
-            file_path=file_path,
-            content="Test content",
-            parsed=MockParsed(),
-            default_metadata={"author": "Test Author"}
-        )
+        # Create another file without a custom slug
+        test_file2 = tmp_path / "another-test.md"
+        test_file2.write_text("""---
+title: Another Post
+---
+Content here
+""")
         
-        # Verify the custom slug was used instead of the filename
-        assert content_item.slug == "custom-slug"
-        assert content_item.slug != "test-file"
-        
-        # Verify other metadata is preserved
-        assert content_item.metadata["title"] == "Test Title"
-        assert content_item.metadata["author"] == "Test Author" 
+        # Load the content
+        item2 = load_content_file(test_file2)
+        assert item2 is not None
+        assert item2.slug == "another-test"  # Should use the filename-based slug 

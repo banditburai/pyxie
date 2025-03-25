@@ -20,7 +20,6 @@ This module contains general-purpose utilities used across the package.
 import logging
 from typing import Dict, Optional, Any, List, Union, Callable, Tuple, Iterator
 from html import escape
-from datetime import datetime
 from pathlib import Path
 import hashlib
 import importlib.util
@@ -29,7 +28,7 @@ import re
 from dataclasses import dataclass
 
 # Import constants from constants module to avoid circular imports
-from .constants import COMMON_DATE_FORMATS, RequiredMetadata
+from .constants import DEFAULT_METADATA
 
 logger = logging.getLogger(__name__)
 
@@ -197,51 +196,39 @@ def hash_file(path: Union[str, Path], use_mtime: bool = True) -> Optional[str]:
         log(logger, "Utilities", "warning", "hash_file", f"Failed to hash file {path}: {e}")
         return None
 
-def _prepare_content_item(
-    file_path: Path, 
-    content: str,
-    parsed: Any,
-    default_metadata: Optional[Dict[str, Any]] = None
-) -> Any:
-    """Create a ContentItem from parsed content with appropriate metadata."""
-    from .types import ContentItem, ContentBlock
-        
-    metadata = {}
-    if parsed.metadata:
-        metadata.update(parsed.metadata)
-    if default_metadata:
-        metadata = merge_metadata(default_metadata, metadata)
-    
-    blocks = getattr(parsed, 'blocks', {})
-    if not blocks:
-        blocks = {"content": [ContentBlock(
-            tag_name="markdown",
-            content=content,
-            attrs_str="",
-            content_type="markdown"
-        )]}
-    
-    return ContentItem(
-        source_path=file_path,
-        metadata=metadata,
-        blocks=blocks
-    )
-
 def load_content_file(
     file_path: Path, 
     default_metadata: Optional[Dict[str, Any]] = None,
     logger_instance: Optional[logging.Logger] = None,
-    parse_func: Optional[Callable[[str, Path], Any]] = None
+    parse_func: Optional[Callable[[str], Tuple[Dict[str, Any], str]]] = None
 ) -> Optional[Any]:
     """Load and parse a content file, creating a ContentItem object."""
     try:
-        from .parser import parse as default_parse
+        from .parser import parse_frontmatter
+        from .types import ContentItem, ContentBlock
+        from .constants import DEFAULT_METADATA
         
-        parse_function = parse_func or default_parse
+        # Get raw content and parse frontmatter
         content = file_path.read_text()
-        parsed = parse_function(content, file_path)
+        metadata, content_without_frontmatter = (parse_func or parse_frontmatter)(content)
         
-        return _prepare_content_item(file_path, content, parsed, default_metadata)
+        # Merge metadata in consistent order
+        merged_metadata = merge_metadata(DEFAULT_METADATA, metadata)
+        if default_metadata:
+            merged_metadata = merge_metadata(merged_metadata, default_metadata)
+            
+        # Create initial content block
+        blocks = {"content": [ContentBlock(
+            tag_name="markdown",
+            content=content_without_frontmatter,
+            attrs_str=""
+        )]}
+        
+        return ContentItem(
+            source_path=file_path,
+            metadata=merged_metadata,
+            blocks=blocks
+        )
     except Exception as e:
         if logger_instance:
             log(logger_instance, "ContentLoader", "error", "load", f"Failed to load {file_path}: {e}")

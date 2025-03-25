@@ -53,34 +53,12 @@ class ContentBlock:
     content: str
     attrs_str: str
     marker: Optional[str] = None
-    params: Dict[str, Any] = None
-    content_type: Optional[str] = None
+    params: Dict[str, Any] = None    
 
     def __post_init__(self):
         """Initialize default values."""
         if self.params is None:
             self.params = {}
-
-@dataclass
-class MarkdownDocument:
-    """Represents a parsed markdown document with its content blocks."""
-    metadata: Dict[str, Any]
-    raw_content: str
-    html: Optional[str] = None
-    
-    # Content blocks organized by type
-    fasthtml_blocks: List[ContentBlock] = field(default_factory=list)
-    script_blocks: List[ContentBlock] = field(default_factory=list)
-    content_blocks: Dict[str, List[ContentBlock]] = field(default_factory=dict)
-    
-    def get_block(self, block_type: str, index: Optional[int] = None) -> Optional[ContentBlock]:
-        """Get a content block by type and optional index."""
-        blocks = self.content_blocks.get(block_type, [])
-        return blocks[index or 0] if blocks and (index is None or 0 <= index < len(blocks)) else None
-    
-    def get_blocks(self, block_type: str) -> List[ContentBlock]:
-        """Get all blocks of a given type."""
-        return self.content_blocks.get(block_type, [])
 
 @dataclass
 class ContentItem:

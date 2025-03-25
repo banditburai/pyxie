@@ -36,14 +36,12 @@ def test_sequential_blocks():
         ContentBlock(
             tag_name="fasthtml",
             content='<ft>\nshow(Div("First block", cls="first"))\n</ft>',
-            attrs_str="",
-            content_type="ft"
+            attrs_str="",            
         ),
         ContentBlock(
             tag_name="fasthtml",
             content='<ft>\nshow(Div("Second block", cls="second"))\n</ft>',
-            attrs_str="",
-            content_type="ft"
+            attrs_str="",            
         )
     ]
     
@@ -59,14 +57,12 @@ def test_mixed_content_blocks():
         ContentBlock(
             tag_name="fasthtml",
             content='<ft>\nshow(Div("FastHTML block", cls="ft"))\n</ft>',
-            attrs_str="",
-            content_type="ft"
+            attrs_str=""
         ),
         ContentBlock(
             tag_name="content",
             content="# Markdown block\n\nThis is markdown content.",
-            attrs_str="",
-            content_type="markdown"
+            attrs_str=""
         )
     ]
     
@@ -83,13 +79,11 @@ def test_block_with_variables():
             tag_name="fasthtml",
             content='<ft>\ndef MyComponent(text):\n    return Div(text, cls="custom")\n</ft>',
             attrs_str="",
-            content_type="ft"
         ),
         ContentBlock(
             tag_name="fasthtml",
             content='<ft>\nshow(MyComponent("Using shared component"))\n</ft>',
             attrs_str="",
-            content_type="ft"
         )
     ]
     
@@ -114,13 +108,11 @@ def test_block_with_layout():
             tag_name="fasthtml",
             content='<ft>\nshow(Div("First in layout", cls="first"))\n</ft>',
             attrs_str="",
-            content_type="ft"
         ),
         ContentBlock(
             tag_name="fasthtml",
             content='<ft>\nshow(Div("Second in layout", cls="second"))\n</ft>',
             attrs_str="",
-            content_type="ft"
         )
     ]
     

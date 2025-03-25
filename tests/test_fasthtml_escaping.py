@@ -3,7 +3,6 @@
 import pytest
 from mistletoe import Document
 from pyxie.renderer import render_content
-from pyxie.parser import parse
 from pyxie.types import ContentBlock, ContentItem
 from pyxie.layouts import layout, registry
 from pyxie.fasthtml import render_fasthtml
@@ -27,7 +26,7 @@ def setup_test_layout():
         """Basic layout that just renders the content directly."""
         return Div(data_slot="content")
 
-def create_test_item(content: str, content_type: str = "markdown") -> ContentItem:
+def create_test_item(content: str) -> ContentItem:
     """Create a test ContentItem with the given content."""
     return ContentItem(
         source_path=Path("test.md"),
@@ -35,8 +34,7 @@ def create_test_item(content: str, content_type: str = "markdown") -> ContentIte
         blocks={"content": [ContentBlock(
             tag_name="content",
             content=content,
-            attrs_str="",
-            content_type=content_type
+            attrs_str="",            
         )]}
     )
 

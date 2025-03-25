@@ -21,7 +21,7 @@ from io import StringIO
 import inspect
 
 from mistletoe import Document, HtmlRenderer
-from mistletoe.block_token import add_token
+from mistletoe.block_token import add_token, HTMLBlock
 from lxml import html
 
 from .types import ContentItem
@@ -29,7 +29,7 @@ from .layouts import get_layout
 from .fasthtml import render_fasthtml
 from .errors import format_error_html
 from .utilities import log
-from .constants import PYXIE_SHOW_ATTR
+from .constants import PYXIE_SHOW_ATTR, SELF_CLOSING_TAGS
 from .parser import FastHTMLToken, ScriptToken, ContentBlockToken
 from .slots import fill_slots
 from .cache import CacheProtocol
@@ -97,6 +97,8 @@ class PyxieHTMLRenderer(HtmlRenderer):
         """Render a content block token."""
         attrs = getattr(token, 'attrs', {})
         attr_str = ' ' + ' '.join(f'{k}="{v}"' for k, v in attrs.items()) if attrs else ''
+        
+        # Render content directly without creating an HTMLBlock
         return f'<{token.tag_name}{attr_str}>{token.content}</{token.tag_name}>'
 
 def extract_slots_with_content(rendered_blocks: Dict[str, List[str]]) -> Set[str]:
@@ -185,11 +187,12 @@ def render_blocks(item: ContentItem) -> Dict[str, List[str]]:
     add_token(ContentBlockToken)
     
     rendered_blocks = {}
-    for block_name, blocks in item.blocks.items():
-        rendered_blocks[block_name] = []
-        for block in blocks:
-            doc = Document(StringIO(block.content))
-            with PyxieHTMLRenderer() as renderer:
+    with PyxieHTMLRenderer() as renderer:
+        for block_name, blocks in item.blocks.items():
+            rendered_blocks[block_name] = []
+            for block in blocks:
+                # Create a document with the block's content
+                doc = Document(StringIO(block.content))
                 rendered_blocks[block_name].append(renderer.render(doc))
     return rendered_blocks
 

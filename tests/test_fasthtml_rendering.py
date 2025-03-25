@@ -14,7 +14,6 @@ from pyxie.fasthtml import render_fasthtml, create_namespace
 import fasthtml.common as ft_common
 from pyxie.types import ContentBlock, ContentItem
 from pyxie.renderer import render_content
-from pyxie.parser import parse
 from pyxie.layouts import layout, registry
 from fastcore.xml import FT, Div
 

@@ -21,22 +21,14 @@ def setup_test_layout():
         """Default layout that just renders the content directly."""
         return Div(content, data_slot="content")
 
-def create_test_item(content: str, content_type: str = "ft") -> ContentItem:
+def create_test_item(content: str) -> ContentItem:
     """Create a test ContentItem with the given content."""
-    if content_type == "ft":
-        blocks = {"content": [ContentBlock(
-            tag_name="fasthtml",
-            content=f"<ft>\n{content}\n</ft>",  # Wrap content in <ft> tags
-            attrs_str="",
-            content_type="ft"
-        )]}
-    else:
-        blocks = {"content": [ContentBlock(
-            tag_name="content",
-            content=content,
-            attrs_str="",
-            content_type=content_type
-        )]}
+    
+    blocks = {"content": [ContentBlock(
+        tag_name="fasthtml",
+        content=f"<ft>\n{content}\n</ft>",  # Wrap content in <ft> tags
+        attrs_str=""
+    )]}
     
     return ContentItem(
         source_path=Path("test.md"),
@@ -52,7 +44,7 @@ def test_content_type_handling():
     ft_content = """
 show(Div("FastHTML content", cls="ft-test"))
 """
-    ft_item = create_test_item(ft_content, content_type="ft")
+    ft_item = create_test_item(ft_content)
     ft_result = render_content(ft_item)
     logger.info("FastHTML content result:\n%s", ft_result)
     
@@ -62,7 +54,7 @@ show(Div("FastHTML content", cls="ft-test"))
 
 This is regular markdown content.
 """
-    md_item = create_test_item(md_content, content_type="markdown")
+    md_item = create_test_item(md_content)
     md_result = render_content(md_item)
     logger.info("Markdown content result:\n%s", md_result)
 
@@ -72,7 +64,7 @@ def test_fasthtml_block_processing():
     
     # Test simple FastHTML block
     simple_content = 'show(Div("Simple block", cls="simple"))'
-    simple_item = create_test_item(simple_content, content_type="ft")
+    simple_item = create_test_item(simple_content)
     simple_result = render_content(simple_item)
     logger.info("Simple FastHTML block result:\n%s", simple_result)
     
@@ -83,7 +75,7 @@ def MyComponent(text):
 
 show(MyComponent("Complex block"))
 """
-    complex_item = create_test_item(complex_content, content_type="ft")
+    complex_item = create_test_item(complex_content)
     complex_result = render_content(complex_item)
     logger.info("Complex FastHTML block result:\n%s", complex_result)
 
@@ -93,7 +85,7 @@ def test_layout_interaction():
     
     # Test with default layout
     default_content = 'show(Div("Default layout", cls="default"))'
-    default_item = create_test_item(default_content, content_type="ft")
+    default_item = create_test_item(default_content)
     default_result = render_content(default_item)
     logger.info("Default layout result:\n%s", default_result)
     
@@ -112,8 +104,7 @@ def test_layout_interaction():
         blocks={"content": [ContentBlock(
             tag_name="fasthtml",
             content='<ft>\nshow(Div("Custom layout", cls="custom"))\n</ft>',
-            attrs_str="",
-            content_type="ft"
+            attrs_str=""
         )]}
     )
     custom_result = render_content(custom_item)
@@ -129,20 +120,17 @@ def test_multiple_blocks():
             ContentBlock(
                 tag_name="fasthtml",
                 content='<ft>\nshow(Div("First block", cls="first"))\n</ft>',
-                attrs_str="",
-                content_type="ft"
+                attrs_str=""
             ),
             ContentBlock(
                 tag_name="content",
                 content="Some markdown content",
-                attrs_str="",
-                content_type="markdown"
+                attrs_str=""
             ),
             ContentBlock(
                 tag_name="fasthtml",
                 content='<ft>\nshow(Div("Second block", cls="second"))\n</ft>',
-                attrs_str="",
-                content_type="ft"
+                attrs_str=""
             )
         ]
     }
@@ -164,7 +152,7 @@ def test_error_handling():
     invalid_content = """
 show(Div("Invalid syntax"
 """
-    invalid_item = create_test_item(invalid_content, content_type="ft")
+    invalid_item = create_test_item(invalid_content)
     invalid_result = render_content(invalid_item)
     logger.info("Invalid syntax result:\n%s", invalid_result)
     
@@ -172,7 +160,7 @@ show(Div("Invalid syntax"
     undefined_content = """
 show(undefined_component)
 """
-    undefined_item = create_test_item(undefined_content, content_type="ft")
+    undefined_item = create_test_item(undefined_content)
     undefined_result = render_content(undefined_item)
     logger.info("Undefined variable result:\n%s", undefined_result)
 

@@ -25,8 +25,7 @@ def create_content_item(slug: str, metadata: Dict[str, Any]) -> ContentItem:
         blocks={"content": [ContentBlock(
             tag_name="markdown",
             content="# Test Content",
-            attrs_str="",
-            content_type="markdown"
+            attrs_str="",            
         )]}
     )
 

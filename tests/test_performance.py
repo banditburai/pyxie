@@ -1,187 +1,309 @@
-"""Performance tests for Pyxie components.
-
-These tests measure the performance of key components like the parser,
-renderer, and slot filling operations with different sizes of input.
-"""
+"""Tests for performance benchmarks."""
 
 import pytest
 import time
-import tempfile
 from pathlib import Path
-from pyxie.parser import parse, FastHTMLToken, ScriptToken, ContentBlockToken
-from pyxie.slots import fill_slots
-from pyxie.renderer import render_content
-from fastcore.xml import Div, P, FT
+from typing import Dict, Any
 from mistletoe.block_token import add_token
+from pyxie.parser import parse_frontmatter, FastHTMLToken, ScriptToken, ContentBlockToken
 from pyxie.types import ContentItem, ContentBlock
-from pyxie.layouts import Layout, layout
+from pyxie.renderer import render_content
+from pyxie.layouts import layout
+from fasthtml.common import *
 
-def time_execution(func, *args, **kwargs):
-    """Execute a function and measure its execution time."""
-    start_time = time.time()
-    result = func(*args, **kwargs)
-    end_time = time.time()
-    return result, end_time - start_time
+# Register content block tokens
+add_token(FastHTMLToken)
+add_token(ScriptToken)
+add_token(ContentBlockToken)
 
-def create_nested_structure(depth: int):
-    """Create a nested element structure for testing."""
-    if depth <= 0:
-        return P("Content at leaf level", data_slot="slot-leaf")
-    
-    children = []
-    for i in range(3):  # Create 3 children at each level
-        child = create_nested_structure(depth - 1)
-        children.append(child)
-    
-    return Div(
-        *children,
-        data_slot=f"slot-level-{depth}",
-        cls=f"level-{depth}"
-    )
-
-# Create test content of different sizes
-def generate_test_content(size: str) -> str:
+@pytest.fixture
+def test_content(request) -> str:
     """Generate test content of different sizes."""
+    size = request.param
     if size == "small":
-        blocks = 5
-        block_size = 100
-    elif size == "medium":
-        blocks = 20
-        block_size = 500
-    elif size == "large":
-        blocks = 50
-        block_size = 2000
-    else:
-        raise ValueError(f"Invalid size: {size}")
-    
-    content = "---\n"
-    content += "title: Test Content\n"
-    content += "layout: test\n"
-    content += "---\n\n"
-    
-    content += "# Main Content\n\n"
-    content += "This is the main content of the document.\n\n"
-    
-    # Create separate content blocks
-    content_blocks = []
-    for i in range(blocks):
-        block_content = []
-        block_content.append(f"## Block {i}\n")
-        for j in range(block_size // 10):
-            block_content.append(f"This is sample content for block {i}, line {j}.")
-        content_blocks.append(ContentBlock(
-            tag_name="content",
-            content="\n".join(block_content),
-            attrs_str="",
-            content_type="markdown"
-        ))
-    
-    # Create initial markdown block
-    initial_block = ContentBlock(
-        tag_name="content",
-        content="# Main Content\n\nThis is the main content of the document.",
-        attrs_str="",
-        content_type="markdown"
-    )
-    
-    return initial_block, content_blocks
+        return """---
+title: Small Test
+date: 2024-03-20
+---
 
-@pytest.mark.parametrize("content_size", ["small", "medium", "large"])
-def test_parser_performance(content_size: str):
-    """Test parser performance with different content sizes."""
-    initial_block, content_blocks = generate_test_content(content_size)
-    
-    # Create ContentItem directly
-    content_item = ContentItem(
-        source_path=Path("test.md"),
-        metadata={"title": "Test Content", "layout": "test"},
-        blocks={"content": [initial_block] + content_blocks}
+<content>
+# Small Test
+
+This is a small test document.
+</content>
+"""
+    elif size == "medium":
+        return """---
+title: Medium Test
+date: 2024-03-20
+---
+
+<content>
+# Medium Test
+
+This is a medium test document with multiple sections.
+
+## Section 1
+
+Content for section 1.
+
+## Section 2
+
+Content for section 2.
+
+## Section 3
+
+Content for section 3.
+</content>
+"""
+    else:  # large
+        return """---
+title: Large Test
+date: 2024-03-20
+---
+
+<content>
+# Large Test
+
+This is a large test document with multiple sections and complex content.
+
+## Section 1
+
+Content for section 1 with lists:
+
+- Item 1
+- Item 2
+- Item 3
+
+## Section 2
+
+Content for section 2 with code:
+
+```python
+def test_function():
+    return "Hello, World!"
+```
+
+## Section 3
+
+Content for section 3 with FastHTML:
+
+<ft>
+def Greeting(name="World"):
+    return Div(
+        H1(f"Hello, {name}!"),
+        P("Welcome to my site.")
     )
+
+show(Greeting())
+</ft>
+
+## Section 4
+
+Content for section 4 with tables:
+
+| Column 1 | Column 2 | Column 3 |
+|----------|----------|----------|
+| Row 1    | Data     | Data     |
+| Row 2    | Data     | Data     |
+| Row 3    | Data     | Data     |
+
+## Section 5
+
+Final section with more content.
+</content>
+"""
+
+@pytest.mark.parametrize("test_content", ["small", "medium", "large"], indirect=True)
+def test_parser_performance(test_content: str):
+    """Test parser performance with different content sizes."""
+    start_time = time.time()
     
-    # Print performance statistics
-    print(f"\nParser performance with {content_size} content:")
-    print(f"  Blocks: {len(content_blocks)}")
+    # Parse content multiple times
+    iterations = 100
+    for _ in range(iterations):
+        metadata, content = parse_frontmatter(test_content)
     
-    # Basic verification that parsing succeeded
-    assert content_item is not None
-    assert content_item.metadata["title"] == "Test Content"
+    end_time = time.time()
+    duration = end_time - start_time
     
-    # Verify blocks were parsed
-    if content_size == "small":
-        assert len(content_item.blocks["content"]) == 6  # Initial block + 5 content blocks
-    elif content_size == "medium":
-        assert len(content_item.blocks["content"]) == 21  # Initial block + 20 content blocks
-    elif content_size == "large":
-        assert len(content_item.blocks["content"]) == 51  # Initial block + 50 content blocks
+    # Calculate average time per parse
+    avg_time = duration / iterations
+    print(f"\nParser performance for {len(test_content)} bytes:")
+    print(f"Total time: {duration:.4f} seconds")
+    print(f"Average time: {avg_time:.4f} seconds per parse")
+    
+    # Assert reasonable performance
+    assert avg_time < 0.01, f"Parsing took too long: {avg_time:.4f} seconds per parse"
 
 def test_slot_filling_performance():
-    """Test slot filling performance with complex nested structures."""
-    # Create a complex nested structure
-    def create_nested_element(depth: int, width: int) -> FT:
-        """Create a nested element structure for testing."""
-        if depth <= 0:
-            return P("Content at leaf level", data_slot="slot-leaf")
-        
-        children = []
-        for i in range(width):
-            child = create_nested_element(depth - 1, width)
-            children.append(child)
-        
-        return Div(*children, data_slot=f"slot-{depth}")
-    
-    # Create element with 5 levels of nesting, width 3
-    element = create_nested_element(5, 3)
-    
-    # Create slot values
-    slots = {}
-    
-    # Measure slot filling time
-    result, fill_time = time_execution(fill_slots, element, slots)
-    
-    # Print performance statistics
-    print("\nSlot filling performance:")
-    print(f"  Time: {fill_time:.4f}s")
-    
-    # Basic verification
-    assert result is not None
-
-def test_rendering_performance():
-    """Test the performance of the complete rendering pipeline."""
-    # Register a test layout
+    """Test slot filling performance."""
+    # Create a complex layout with multiple slots
     @layout("test")
-    def test_layout() -> FT:
+    def test_layout(title: str = "") -> FT:
         return Div(
-            Div(
-                None,  # Use None as default slot content
-                data_slot="content",
-                cls="test-layout"
-            )
+            H1(title),
+            Div(None, data_slot="header"),
+            Div(None, data_slot="nav"),
+            Div(None, data_slot="sidebar"),
+            Div(None, data_slot="content"),
+            Div(None, data_slot="footer"),
+            cls="layout"
         )
     
-    # Generate medium-sized test content
-    initial_block, content_blocks = generate_test_content("medium")
+    # Create content blocks
+    blocks = {
+        "header": [ContentBlock(
+            tag_name="header",
+            content="# Site Header",
+            attrs_str=""
+        )],
+        "nav": [ContentBlock(
+            tag_name="nav",
+            content="- [Home](#)\n- [About](#)\n- [Contact](#)",
+            attrs_str=""
+        )],
+        "sidebar": [ContentBlock(
+            tag_name="sidebar",
+            content="## Categories\n- Category 1\n- Category 2\n- Category 3",
+            attrs_str=""
+        )],
+        "content": [ContentBlock(
+            tag_name="content",
+            content="# Main Content\n\nThis is the main content area.",
+            attrs_str=""
+        )],
+        "footer": [ContentBlock(
+            tag_name="footer",
+            content="© 2024 Test Site",
+            attrs_str=""
+        )]
+    }
     
-    # Create ContentItem directly
-    content_item = ContentItem(
+    # Create content item
+    item = ContentItem(
         source_path=Path("test.md"),
-        metadata={"title": "Test Content", "layout": "test"},
-        blocks={"content": [initial_block] + content_blocks}
+        metadata={"layout": "test", "title": "Test Page"},
+        blocks=blocks
     )
     
-    # Test rendering performance
-    def render_pipeline():
-        rendered = render_content(content_item)
-        return rendered
+    start_time = time.time()
     
-    final_result, render_time = time_execution(render_pipeline)
+    # Render content multiple times
+    iterations = 100
+    for _ in range(iterations):
+        html = render_content(item)
     
-    # Print performance statistics
-    print("\nRendering Pipeline Performance:")
-    print(f"  Total Render Time: {render_time:.4f}s")
+    end_time = time.time()
+    duration = end_time - start_time
     
-    # Basic verification
-    assert content_item is not None
-    assert content_item.metadata["title"] == "Test Content"
-    assert len(content_item.blocks["content"]) == 21  # Initial block + 20 content blocks
-    assert final_result is not None
-    assert "test-layout" in final_result  # Verify layout was applied 
+    # Calculate average time per render
+    avg_time = duration / iterations
+    print(f"\nSlot filling performance:")
+    print(f"Total time: {duration:.4f} seconds")
+    print(f"Average time: {avg_time:.4f} seconds per render")
+    
+    # Assert reasonable performance
+    assert avg_time < 0.01, f"Slot filling took too long: {avg_time:.4f} seconds per render"
+
+def test_rendering_performance():
+    """Test rendering performance with a complex document."""
+    # Create a complex document with various content types
+    content = """---
+title: Performance Test
+date: 2024-03-20
+layout: test
+---
+
+<content>
+# Performance Test
+
+## Markdown Content
+
+This is a test of rendering performance with various content types:
+
+- Lists
+- Code blocks
+- Tables
+- FastHTML components
+
+### Code Example
+
+```python
+def test_function():
+    return "Hello, World!"
+```
+
+### Table Example
+
+| Column 1 | Column 2 | Column 3 |
+|----------|----------|----------|
+| Data 1   | Data 2   | Data 3   |
+| Data 4   | Data 5   | Data 6   |
+
+### FastHTML Example
+
+<ft>
+def TestComponent():
+    return Div(
+        H1("Test Component"),
+        P("This is a test component.")
+    )
+
+show(TestComponent())
+</ft>
+
+### Script Example
+
+<script>
+console.log("Performance test");
+</script>
+</content>
+"""
+    
+    # Register test layout
+    @layout("test")
+    def test_layout(title: str = "") -> FT:
+        return Div(
+            H1(title),
+            Div(None, data_slot="content"),
+            cls="test-layout"
+        )
+    
+    # Parse content
+    metadata, content = parse_frontmatter(content)
+    
+    # Create content blocks
+    blocks = {
+        "content": [ContentBlock(
+            tag_name="content",
+            content=content,
+            attrs_str=""
+        )]
+    }
+    
+    # Create content item
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata=metadata,
+        blocks=blocks
+    )
+    
+    start_time = time.time()
+    
+    # Render content multiple times
+    iterations = 50
+    for _ in range(iterations):
+        html = render_content(item)
+    
+    end_time = time.time()
+    duration = end_time - start_time
+    
+    # Calculate average time per render
+    avg_time = duration / iterations
+    print(f"\nRendering performance:")
+    print(f"Total time: {duration:.4f} seconds")
+    print(f"Average time: {avg_time:.4f} seconds per render")
+    
+    # Assert reasonable performance
+    assert avg_time < 0.02, f"Rendering took too long: {avg_time:.4f} seconds per render" 

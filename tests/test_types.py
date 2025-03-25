@@ -12,8 +12,7 @@ def test_image_property(tmp_path):
         blocks={"content": [ContentBlock(
             tag_name="markdown",
             content="Test content",
-            attrs_str="",
-            content_type="markdown"
+            attrs_str="",            
         )]}
     )
     assert item1.image == "https://example.com/image.jpg"
@@ -30,7 +29,6 @@ def test_image_property(tmp_path):
             tag_name="markdown",
             content="Test content",
             attrs_str="",
-            content_type="markdown"
         )]}
     )
     assert item2.image == "https://example.com/img/42.jpg"
@@ -46,7 +44,6 @@ def test_image_property(tmp_path):
             tag_name="markdown",
             content="Test content",
             attrs_str="",
-            content_type="markdown"
         )]}
     )
     assert item3.image == "https://example.com/img/test3.jpg"
@@ -65,7 +62,6 @@ def test_image_property(tmp_path):
             tag_name="markdown",
             content="Test content",
             attrs_str="",
-            content_type="markdown"
         )]}
     )
     assert item4.image == "https://example.com/img/1024x768/custom-seed.jpg"
@@ -78,7 +74,6 @@ def test_image_property(tmp_path):
             tag_name="markdown",
             content="Test content",
             attrs_str="",
-            content_type="markdown"
         )]}
     )
     assert "picsum.photos/seed/test5/" in item5.image
@@ -94,7 +89,6 @@ def test_image_property(tmp_path):
             tag_name="markdown",
             content="Test content",
             attrs_str="",
-            content_type="markdown"
         )]}
     )
     assert "picsum.photos/seed/test6/" in item6.image
@@ -130,8 +124,7 @@ def test_content_property(tmp_path):
         blocks={"content": [ContentBlock(
             tag_name="markdown",
             content="Test content",
-            attrs_str="",
-            content_type="markdown"
+            attrs_str=""
         )]}
     )
     assert item1.content == "Test content"
@@ -144,14 +137,12 @@ def test_content_property(tmp_path):
             ContentBlock(
                 tag_name="markdown",
                 content="First content",
-                attrs_str="",
-                content_type="markdown"
+                attrs_str=""
             ),
             ContentBlock(
                 tag_name="markdown",
                 content="Second content",
-                attrs_str="",
-                content_type="markdown"
+                attrs_str=""
             )
         ]}
     )
@@ -230,14 +221,12 @@ def test_serialization(tmp_path):
             "content": [ContentBlock(
                 tag_name="markdown",
                 content="Test content",
-                attrs_str="",
-                content_type="markdown"
+                attrs_str="",                
             )],
             "scripts": [ContentBlock(
                 tag_name="script",
                 content="console.log('test')",
-                attrs_str="",
-                content_type="javascript"
+                attrs_str="",                
             )]
         }
     )

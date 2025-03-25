@@ -22,22 +22,14 @@ def setup_test_layout():
         """Default layout that just renders the content directly."""
         return Div(content, data_slot="content")
 
-def create_test_item(content: str, content_type: str = "ft") -> ContentItem:
-    """Create a test ContentItem."""
-    if content_type == "ft":
-        blocks = {"content": [ContentBlock(
-            tag_name="fasthtml",
-            content=f"<ft>\n{content}\n</ft>",  # Wrap content in <ft> tags
-            attrs_str="",
-            content_type="ft"
-        )]}
-    else:
-        blocks = {"content": [ContentBlock(
-            tag_name="content",
-            content=content,
-            attrs_str="",
-            content_type=content_type
-        )]}
+def create_test_item(content: str) -> ContentItem:
+    """Create a test ContentItem."""    
+    blocks = {"content": [ContentBlock(
+        tag_name="fasthtml",
+        content=f"<ft>\n{content}\n</ft>",  # Wrap content in <ft> tags
+        attrs_str="",        
+    )]}
+
     
     return ContentItem(
         source_path=Path("test.md"),
@@ -88,14 +80,12 @@ def test_multiple_blocks():
         ContentBlock(
             tag_name="fasthtml",
             content=f"<ft>\n{content1}\n</ft>",  # Wrap content in <ft> tags
-            attrs_str="",
-            content_type="ft"
+            attrs_str="",            
         ),
         ContentBlock(
             tag_name="fasthtml",
             content=f"<ft>\n{content2}\n</ft>",  # Wrap content in <ft> tags
-            attrs_str="",
-            content_type="ft"
+            attrs_str="",            
         )
     ]}
     

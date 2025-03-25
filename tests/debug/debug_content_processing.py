@@ -25,22 +25,14 @@ def setup_test_layout():
         """Default layout that just renders the content directly."""
         return Div(content, data_slot="content")
 
-def create_test_item(content: str, content_type: str = "ft") -> ContentItem:
-    """Create a test ContentItem with the given content."""
-    if content_type == "ft":
-        blocks = {"content": [ContentBlock(
-            tag_name="fasthtml",
-            content=f"<ft>\n{content}\n</ft>",
-            attrs_str="",
-            content_type="ft"
-        )]}
-    else:
-        blocks = {"content": [ContentBlock(
-            tag_name="content",
-            content=content,
-            attrs_str="",
-            content_type=content_type
-        )]}
+def create_test_item(content: str) -> ContentItem:
+    """Create a test ContentItem with the given content."""    
+    blocks = {"content": [ContentBlock(
+        tag_name="fasthtml",
+        content=f"<ft>\n{content}\n</ft>",
+        attrs_str=""
+    )]}
+
     
     return ContentItem(
         source_path=Path("test.md"),
@@ -60,7 +52,7 @@ def test_content_type_preservation():
     logger.info("Direct FastHTML rendering result:\n%s", direct_result)
     
     # Then test through render_content
-    ft_item = create_test_item(ft_content, content_type="ft")
+    ft_item = create_test_item(ft_content)
     render_result = render_content(ft_item)
     logger.info("Render content result:\n%s", render_result)
     
@@ -83,7 +75,7 @@ show(MyComponent("Test"))
     logger.info("Direct component definition result:\n%s", direct_result)
     
     # Then test through render_content
-    ft_item = create_test_item(component_def, content_type="ft")
+    ft_item = create_test_item(component_def)
     render_result = render_content(ft_item)
     logger.info("Render content component result:\n%s", render_result)
     
@@ -117,8 +109,7 @@ def test_layout_content_processing():
         blocks={"content": [ContentBlock(
             tag_name="fasthtml",
             content=f"<ft>\n{ft_content}\n</ft>",
-            attrs_str="",
-            content_type="ft"
+            attrs_str=""
         )]}
     )
     layout_result = render_content(custom_item)
@@ -135,16 +126,14 @@ def test_content_block_processing():
     ft_block = ContentBlock(
         tag_name="fasthtml",
         content='<ft>\nshow(Div("FastHTML block", cls="ft"))\n</ft>',
-        attrs_str="",
-        content_type="ft"
+        attrs_str=""
     )
     
     # Test a markdown block
     md_block = ContentBlock(
         tag_name="content",
         content="# Markdown block\n\nThis is markdown content.",
-        attrs_str="",
-        content_type="markdown"
+        attrs_str=""
     )
     
     # Process each block individually

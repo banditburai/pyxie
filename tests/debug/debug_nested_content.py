@@ -23,7 +23,7 @@ def setup_test_layout():
         """Default layout that just renders the content directly."""
         return ft_common.Div(content, data_slot="content")
 
-def create_test_item(content: str, content_type: str = "markdown") -> ContentItem:
+def create_test_item(content: str) -> ContentItem:
     """Create a test ContentItem with the given content."""
     return ContentItem(
         source_path=Path("test.md"),
@@ -31,8 +31,7 @@ def create_test_item(content: str, content_type: str = "markdown") -> ContentIte
         blocks={"content": [ContentBlock(
             tag_name="content",
             content=content,
-            attrs_str="",
-            content_type=content_type
+            attrs_str="",            
         )]}
     )
 
