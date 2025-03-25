@@ -177,49 +177,72 @@ def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = 
 
 def render_blocks(item: ContentItem) -> Dict[str, List[str]]:
     """Render all content blocks for an item."""
+    log(logger, "Renderer", "debug", "blocks", f"Starting block rendering for {item.slug}")
+    log(logger, "Renderer", "debug", "blocks", f"Available blocks: {list(item.blocks.keys())}")
+    
     add_token(FastHTMLToken)
     add_token(ScriptToken)
     add_token(ContentBlockToken)
     
     rendered_blocks = {}
     for block_name, blocks in item.blocks.items():
+        log(logger, "Renderer", "debug", "blocks", f"Rendering block: {block_name} ({len(blocks)} blocks)")
         rendered_blocks[block_name] = []
         for block in blocks:
+            log(logger, "Renderer", "debug", "blocks", f"Block content length: {len(block.content)}")
             doc = Document(StringIO(block.content))
             with PyxieHTMLRenderer() as renderer:
-                rendered_blocks[block_name].append(renderer.render(doc))
+                rendered = renderer.render(doc)
+                log(logger, "Renderer", "debug", "blocks", f"Rendered block length: {len(rendered)}")
+                rendered_blocks[block_name].append(rendered)
+    
+    log(logger, "Renderer", "debug", "blocks", f"Finished rendering blocks: {list(rendered_blocks.keys())}")
     return rendered_blocks
 
 def render_content(item: ContentItem, cache: Optional[CacheProtocol] = None) -> str:
     """Render a content item to HTML using its layout and blocks."""
     try:
+        log(logger, "Renderer", "debug", "render", f"Starting render for {item.slug}")
         cached_html, layout_html, layout_error = handle_cache_and_layout(item, cache)
         if cached_html:
+            log(logger, "Renderer", "debug", "render", "Using cached HTML")
             return cached_html
         if layout_error:
+            log(logger, "Renderer", "error", "render", f"Layout error: {layout_error}")
             return format_error_html("rendering", layout_error)
         
         try:
+            log(logger, "Renderer", "debug", "render", f"Rendering blocks for {item.slug}")
             rendered_blocks = render_blocks(item)
+            log(logger, "Renderer", "debug", "render", f"Rendered blocks: {list(rendered_blocks.keys())}")
             
             if not any(any(block.strip() for block in blocks) for blocks in rendered_blocks.values()):
+                log(logger, "Renderer", "debug", "render", "No content in blocks")
                 return "<div></div>"
             
             if not layout_html:
-                return "\n".join(rendered_blocks.get("content", [])) or "<div></div>"
+                log(logger, "Renderer", "debug", "render", "No layout, using content blocks directly")
+                content = "\n".join(rendered_blocks.get("content", [])) or "<div></div>"
+                log(logger, "Renderer", "debug", "render", f"Direct content length: {len(content)}")
+                return content
             
+            log(logger, "Renderer", "debug", "render", "Filling slots")
             result = fill_slots(layout_html, rendered_blocks)
             if result.error:
+                log(logger, "Renderer", "error", "render", f"Slot filling error: {result.error}")
                 return format_error_html("rendering", result.error)
             
+            log(logger, "Renderer", "debug", "render", "Processing conditional visibility")
             html = process_conditional_visibility(
                 result.element, 
                 extract_slots_with_content(rendered_blocks)
             )
             
             if cache:
+                log(logger, "Renderer", "debug", "render", "Storing in cache")
                 cache.store(item.collection or "content", item.source_path, html, get_layout_name(item))
             
+            log(logger, "Renderer", "debug", "render", f"Final HTML length: {len(html)}")
             return html
                 
         except Exception as e:

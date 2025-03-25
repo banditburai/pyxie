@@ -116,6 +116,9 @@ class ContentBlockToken(BlockToken):
         self.attrs = {}
         self.content = match.group(3)
         
+        log(logger, "Parser", "debug", "content_block", 
+            f"Creating content block: tag={self.tag_name}, content_length={len(self.content)}")
+        
         # Parse attributes if present
         if match.group(2):
             attrs_str = match.group(2)
@@ -128,10 +131,14 @@ class ContentBlockToken(BlockToken):
                     self.attrs[key] = value
                 else:
                     self.attrs[attr] = True
+            log(logger, "Parser", "debug", "content_block", f"Block attributes: {self.attrs}")
     
     @classmethod
     def start(cls, line):
-        return bool(cls.pattern.match(line))
+        result = bool(cls.pattern.match(line))
+        if result:
+            log(logger, "Parser", "debug", "content_block", f"Found content block start: {line[:50]}...")
+        return result
     
     @classmethod
     def read(cls, lines):
@@ -144,8 +151,10 @@ class ContentBlockToken(BlockToken):
         # Extract tag name and check if it's excluded
         tag_name = match.group(1)
         if tag_name.lower() in ('ft', 'fasthtml', 'script'):
+            log(logger, "Parser", "debug", "content_block", f"Skipping excluded tag: {tag_name}")
             return None
             
+        log(logger, "Parser", "debug", "content_block", f"Reading content block with tag: {tag_name}")
         return cls(match)
 
 def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
@@ -177,5 +186,11 @@ def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
 
 def parse(content: str, filename: Optional[str] = None) -> MarkdownDocument:
     """Parse markdown content with frontmatter."""
+    log(logger, "Parser", "debug", "parse", f"Starting parse for {filename or 'unnamed content'}")
+    log(logger, "Parser", "debug", "parse", f"Content length: {len(content)}")
+    
     metadata, raw_content = parse_frontmatter(content)
+    log(logger, "Parser", "debug", "parse", f"Metadata keys: {list(metadata.keys())}")
+    log(logger, "Parser", "debug", "parse", f"Raw content length: {len(raw_content)}")
+    
     return MarkdownDocument(metadata=DEFAULT_METADATA | metadata, raw_content=raw_content)
