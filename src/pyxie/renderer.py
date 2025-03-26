@@ -180,20 +180,8 @@ def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = 
     log(logger, "Renderer", "warning", "layout", error_msg)
     return None, None, error_msg
 
-def render_blocks(item: ContentItem) -> Dict[str, List[str]]:
-    """Render all content blocks for an item."""
-    rendered_blocks = {}
-    with PyxieHTMLRenderer() as renderer:
-        for block_name, blocks in item.blocks.items():
-            rendered_blocks[block_name] = []
-            for block in blocks:
-                # Create a document with the block's content
-                doc = Document(StringIO(block.content))
-                rendered_blocks[block_name].append(renderer.render(doc))
-    return rendered_blocks
-
 def render_content(item: ContentItem, cache: Optional[CacheProtocol] = None) -> str:
-    """Render a content item to HTML using its layout and blocks."""
+    """Render a content item to HTML using its layout and content."""
     try:
         cached_html, layout_html, layout_error = handle_cache_and_layout(item, cache)
         if cached_html:
@@ -202,21 +190,30 @@ def render_content(item: ContentItem, cache: Optional[CacheProtocol] = None) -> 
             return format_error_html("rendering", layout_error)
         
         try:
-            rendered_blocks = render_blocks(item)
+            # Register custom tokens
+            add_token(FastHTMLToken)
+            add_token(ScriptToken)
+            add_token(ContentBlockToken)
             
-            if not any(any(block.strip() for block in blocks) for blocks in rendered_blocks.values()):
+            # Parse and render content
+            with PyxieHTMLRenderer() as renderer:
+                doc = Document(StringIO(item.content))
+                rendered_content = renderer.render(doc)
+            
+            if not rendered_content.strip():
                 return "<div></div>"
             
             if not layout_html:
-                return "\n".join(rendered_blocks.get("content", [])) or "<div></div>"
+                return rendered_content
             
-            result = fill_slots(layout_html, rendered_blocks)
+            # Fill layout slots with rendered content
+            result = fill_slots(layout_html, {"content": [rendered_content]})
             if result.error:
                 return format_error_html("rendering", result.error)
             
             html = process_conditional_visibility(
                 result.element, 
-                extract_slots_with_content(rendered_blocks)
+                {"content"} if rendered_content.strip() else set()
             )
             
             if cache:

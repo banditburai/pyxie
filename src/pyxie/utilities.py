@@ -26,6 +26,7 @@ import importlib.util
 import os
 import re
 from dataclasses import dataclass
+from .types import ContentItem
 
 # Import constants from constants module to avoid circular imports
 from .constants import DEFAULT_METADATA
@@ -199,31 +200,29 @@ def hash_file(path: Union[str, Path], use_mtime: bool = True) -> Optional[str]:
 def load_content_file(
     file_path: Path, 
     default_metadata: Optional[Dict[str, Any]] = None,
-    logger_instance: Optional[logging.Logger] = None,
-    parse_func: Optional[Callable[[str], Tuple[Dict[str, Any], str]]] = None
-) -> Optional[Any]:
-    """Load and parse a content file, creating a ContentItem object."""
+    logger_instance: Optional[logging.Logger] = None
+) -> Optional[ContentItem]:
+    """Load a content file and create a ContentItem.
+    
+    This function handles:
+    1. Loading raw file content
+    2. Parsing frontmatter
+    3. Merging metadata
+    """
     try:
         from .parser import parse_frontmatter
-        from .types import ContentItem, ContentBlock
+        from .types import ContentItem
         from .constants import DEFAULT_METADATA
-        from mistletoe import Document
-        from mistletoe.block_token import add_token
-        from .parser import FastHTMLToken, ScriptToken, ContentBlockToken
         
         # Get raw content and parse frontmatter
         content = file_path.read_text()
         if logger_instance:
             log(logger_instance, "ContentLoader", "info", "load", f"Loading content from {file_path}")
             
-        metadata, content_without_frontmatter = (parse_func or parse_frontmatter)(content)
+        metadata, content_without_frontmatter = parse_frontmatter(content)
         if logger_instance:
             log(logger_instance, "ContentLoader", "info", "frontmatter", f"Parsed metadata: {metadata}")
-        
-        # Merge metadata in consistent order:
-        # 1. System defaults (DEFAULT_METADATA)
-        # 2. Collection defaults (default_metadata)
-        # 3. File-specific metadata (metadata)
+                
         merged_metadata = DEFAULT_METADATA.copy()
         if logger_instance:
             log(logger_instance, "ContentLoader", "info", "metadata", f"Starting with system defaults: {merged_metadata}")
@@ -236,48 +235,11 @@ def load_content_file(
         merged_metadata.update(metadata)
         if logger_instance:
             log(logger_instance, "ContentLoader", "info", "metadata", f"Final merged metadata: {merged_metadata}")
-            
-        # Register our custom tokens
-        add_token(FastHTMLToken)
-        add_token(ScriptToken)
-        add_token(ContentBlockToken)
         
-        # Parse content into blocks using Mistletoe
-        doc = Document(content_without_frontmatter)
-        blocks = {}
-        current_block = None
-        
-        # Extract blocks from the document's tokens
-        for token in doc.children:
-            if isinstance(token, ContentBlockToken):
-                block = ContentBlock(
-                    tag_name=token.tag_name,
-                    content=token.content,
-                    attrs_str=" ".join(f'{k}="{v}"' for k, v in token.attrs.items()) if token.attrs else ""
-                )
-                blocks.setdefault(token.tag_name, []).append(block)
-                current_block = block
-                if logger_instance:
-                    log(logger_instance, "ContentLoader", "info", "blocks", f"Found content block: {token.tag_name}")
-            else:
-                # For non-block tokens, append to current block or create default content block
-                content = str(token)
-                if current_block:
-                    current_block.content += content
-                else:
-                    blocks.setdefault("content", []).append(ContentBlock(
-                        tag_name="content",
-                        content=content,
-                        attrs_str=""
-                    ))
-        
-        if logger_instance:
-            log(logger_instance, "ContentLoader", "info", "blocks", f"Found {len(blocks)} block types: {list(blocks.keys())}")
-            
         return ContentItem(
             source_path=file_path,
             metadata=merged_metadata,
-            blocks=blocks
+            content=content_without_frontmatter
         )
     except Exception as e:
         if logger_instance:

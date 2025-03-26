@@ -62,27 +62,26 @@ class ContentBlock:
 
 @dataclass
 class ContentItem:
-    """A content item with metadata and blocks."""
+    """A content item with metadata and content."""
     source_path: Path
     metadata: Dict[str, Any]
-    blocks: Dict[str, List[ContentBlock]]
+    content: str
     collection: Optional[str] = None
+    
+    # Protected property names that shouldn't be overwritten by metadata
+    PROTECTED_PROPERTIES = {
+        'source_path', 'metadata', 'content', 'collection',
+        'slug', 'status', 'title', 'tags', 'image',
+        'html', 'render'
+    }
     
     @property
     def slug(self) -> str:
         """Get the slug from metadata or source path."""
         return self.metadata.get("slug", self.source_path.stem)
 
-    @property
-    def content(self) -> str:
-        """Get the raw content from the first content block."""
-        content_blocks = self.blocks.get("content", [])
-        if not content_blocks:
-            return ""
-        return content_blocks[0].content
-
     def __post_init__(self):
-        """Initialize metadata and content."""
+        """Initialize metadata."""
         if not self.metadata:
             self.metadata = {}
             
@@ -90,9 +89,9 @@ class ContentItem:
         if "title" not in self.metadata and self.slug:
             self.metadata["title"] = self.slug.replace("-", " ").title()
             
-        # Add metadata keys as attributes for easy access, skipping properties
+        # Add metadata keys as attributes for easy access
         for key, value in self.metadata.items():
-            if not hasattr(self.__class__, key) or not isinstance(getattr(self.__class__, key), property):
+            if key not in self.PROTECTED_PROPERTIES:
                 setattr(self, key, value)
             
     @property
@@ -145,26 +144,14 @@ class ContentItem:
             "slug": self.slug,
             "content": self.content,
             "source_path": str(self.source_path),
-            "metadata": self.metadata,
-            "blocks": {
-                name: [block.__dict__ for block in blocks]
-                for name, blocks in self.blocks.items()
-            }
+            "metadata": self.metadata
         }
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ContentItem":
         """Create from dictionary."""
-        item = cls(
+        return cls(
             source_path=Path(data["source_path"]),
             metadata=data["metadata"],
-            blocks={}
+            content=data["content"]
         )
-        
-        for name, block_list in data.get("blocks", {}).items():
-            item.blocks[name] = [
-                ContentBlock(**block_data)
-                for block_data in block_list
-            ]
-        
-        return item

@@ -22,6 +22,7 @@ import yaml
 from mistletoe.block_token import BlockToken
 from .constants import DEFAULT_METADATA, SELF_CLOSING_TAGS
 from .utilities import log, get_line_number, convert_value
+from .types import ContentBlock
 
 logger = logging.getLogger(__name__)
 
