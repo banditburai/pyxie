@@ -26,7 +26,6 @@ import importlib.util
 import os
 import re
 from dataclasses import dataclass
-from .types import ContentItem
 
 # Import constants from constants module to avoid circular imports
 from .constants import DEFAULT_METADATA
@@ -439,3 +438,5 @@ def build_pagination_urls(
         "last": build_url(pagination.total_pages),
         "pages": {p: build_url(p) for p in pagination.page_range()}
     } 
+
+from .types import ContentItem

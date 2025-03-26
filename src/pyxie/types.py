@@ -24,42 +24,7 @@ from .constants import DEFAULT_METADATA
 
 logger = logging.getLogger(__name__)
 
-PathLike = Union[str, Path]
-
-@dataclass
-class RenderResult:
-    """Result of rendering a block."""
-    content: str = ""
-    error: Optional[str] = None
-
-    @property
-    def success(self) -> bool:
-        """Check if render was successful."""
-        return self.error is None
-
-class Metadata(TypedDict, total=False):
-    """Common metadata fields."""
-    title: str
-    layout: str
-    date: str
-    tags: List[str]
-    author: str
-    description: str
-
-@dataclass
-class ContentBlock:
-    """A content block in a markdown document."""
-    tag_name: str
-    content: str
-    attrs_str: str
-    marker: Optional[str] = None
-    params: Dict[str, Any] = None    
-
-    def __post_init__(self):
-        """Initialize default values."""
-        if self.params is None:
-            self.params = {}
-
+# Define ContentItem before importing utilities that might need it
 @dataclass
 class ContentItem:
     """A content item with metadata and content."""
@@ -107,13 +72,13 @@ class ContentItem:
     @property
     def tags(self) -> List[str]:
         """Get normalized list of tags."""
-        raw_tags = self.metadata.get("tags", [])
         from .utilities import normalize_tags
+        raw_tags = self.metadata.get("tags", [])
         return normalize_tags(raw_tags)
     
     @property
     def image(self) -> Optional[str]:
-        """Get image URL, using template if available."""        
+        """Get image URL, using template if available."""
         if image := self.metadata.get("image"):
             return image                    
         if template := self.metadata.get("image_template"):
@@ -155,3 +120,39 @@ class ContentItem:
             metadata=data["metadata"],
             content=data["content"]
         )
+
+PathLike = Union[str, Path]
+
+@dataclass
+class RenderResult:
+    """Result of rendering a block."""
+    content: str = ""
+    error: Optional[str] = None
+
+    @property
+    def success(self) -> bool:
+        """Check if render was successful."""
+        return self.error is None
+
+class Metadata(TypedDict, total=False):
+    """Common metadata fields."""
+    title: str
+    layout: str
+    date: str
+    tags: List[str]
+    author: str
+    description: str
+
+@dataclass
+class ContentBlock:
+    """A content block in a markdown document."""
+    tag_name: str
+    content: str
+    attrs_str: str
+    marker: Optional[str] = None
+    params: Dict[str, Any] = None    
+
+    def __post_init__(self):
+        """Initialize default values."""
+        if self.params is None:
+            self.params = {}
