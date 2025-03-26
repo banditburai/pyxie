@@ -200,7 +200,7 @@ def load_content_file(
     file_path: Path, 
     default_metadata: Optional[Dict[str, Any]] = None,
     logger_instance: Optional[logging.Logger] = None
-) -> Optional[ContentItem]:
+) -> Optional["ContentItem"]:
     """Load a content file and create a ContentItem.
     
     This function handles:

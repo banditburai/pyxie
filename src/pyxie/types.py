@@ -19,12 +19,10 @@ from typing import Dict, Any, TypedDict, Union, Optional, List
 from pathlib import Path
 from dataclasses import dataclass, field
 
-from .utilities import log
 from .constants import DEFAULT_METADATA
 
 logger = logging.getLogger(__name__)
 
-# Define ContentItem before importing utilities that might need it
 @dataclass
 class ContentItem:
     """A content item with metadata and content."""
@@ -79,6 +77,8 @@ class ContentItem:
     @property
     def image(self) -> Optional[str]:
         """Get image URL, using template if available."""
+        from .utilities import log
+        
         if image := self.metadata.get("image"):
             return image                    
         if template := self.metadata.get("image_template"):
