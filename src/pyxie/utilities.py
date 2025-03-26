@@ -213,12 +213,29 @@ def load_content_file(
         
         # Get raw content and parse frontmatter
         content = file_path.read_text()
+        if logger_instance:
+            log(logger_instance, "ContentLoader", "info", "load", f"Loading content from {file_path}")
+            
         metadata, content_without_frontmatter = (parse_func or parse_frontmatter)(content)
+        if logger_instance:
+            log(logger_instance, "ContentLoader", "info", "frontmatter", f"Parsed metadata: {metadata}")
         
-        # Merge metadata in consistent order
-        merged_metadata = merge_metadata(DEFAULT_METADATA, metadata)
+        # Merge metadata in consistent order:
+        # 1. System defaults (DEFAULT_METADATA)
+        # 2. Collection defaults (default_metadata)
+        # 3. File-specific metadata (metadata)
+        merged_metadata = DEFAULT_METADATA.copy()
+        if logger_instance:
+            log(logger_instance, "ContentLoader", "info", "metadata", f"Starting with system defaults: {merged_metadata}")
+            
         if default_metadata:
-            merged_metadata = merge_metadata(merged_metadata, default_metadata)
+            merged_metadata.update(default_metadata)
+            if logger_instance:
+                log(logger_instance, "ContentLoader", "info", "metadata", f"After collection defaults: {merged_metadata}")
+                
+        merged_metadata.update(metadata)
+        if logger_instance:
+            log(logger_instance, "ContentLoader", "info", "metadata", f"Final merged metadata: {merged_metadata}")
             
         # Register our custom tokens
         add_token(FastHTMLToken)
@@ -227,7 +244,8 @@ def load_content_file(
         
         # Parse content into blocks using Mistletoe
         doc = Document(content_without_frontmatter)
-        blocks = {"content": []}  # Default block
+        blocks = {}
+        current_block = None
         
         # Extract blocks from the document's tokens
         for token in doc.children:
@@ -238,15 +256,24 @@ def load_content_file(
                     attrs_str=" ".join(f'{k}="{v}"' for k, v in token.attrs.items()) if token.attrs else ""
                 )
                 blocks.setdefault(token.tag_name, []).append(block)
+                current_block = block
+                if logger_instance:
+                    log(logger_instance, "ContentLoader", "info", "blocks", f"Found content block: {token.tag_name}")
             else:
-                # For non-block tokens, store the raw content
-                if not blocks["content"]:
-                    blocks["content"].append(ContentBlock(
-                        tag_name="markdown",
-                        content=content_without_frontmatter,
+                # For non-block tokens, append to current block or create default content block
+                content = str(token)
+                if current_block:
+                    current_block.content += content
+                else:
+                    blocks.setdefault("content", []).append(ContentBlock(
+                        tag_name="content",
+                        content=content,
                         attrs_str=""
                     ))
         
+        if logger_instance:
+            log(logger_instance, "ContentLoader", "info", "blocks", f"Found {len(blocks)} block types: {list(blocks.keys())}")
+            
         return ContentItem(
             source_path=file_path,
             metadata=merged_metadata,
