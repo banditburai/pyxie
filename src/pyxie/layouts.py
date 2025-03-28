@@ -37,15 +37,16 @@ Example:
 """
 
 import logging
-from typing import Any, Callable, Dict, Optional, Protocol, List
+from typing import Any, Callable, Dict, Optional, Protocol, List, Set
 from os import PathLike
 from dataclasses import dataclass, field
 from pathlib import Path
 import importlib
 import inspect
-
+from lxml import html
 from fastcore.xml import FT, to_xml
-from .utilities import log
+from .errors import log
+from .slots import process_slots_and_visibility
 
 logger = logging.getLogger(__name__)
 
@@ -94,33 +95,39 @@ class Layout:
         Raises:
             LayoutValidationError: If the layout returns a non-FastHTML value
         """
-        # Extract slots if provided
-        slots = kwargs.pop("slots", None)
-        
-        # Call the layout function
-        result = self.func(*args, **kwargs)
-        
-        # Handle different return types
-        if isinstance(result, tuple) and all(isinstance(item, FT) for item in result):                
-            layout_xml = to_xml(result)
-        elif isinstance(result, (FT, str)):
-            layout_xml = to_xml(result)
-        else:
-            raise LayoutValidationError(
-                f"Layout '{self.name}' must return a FastHTML component "
-                f"or HTML string, got {type(result)}"
-            )
+        try:
+            # Extract slots if provided
+            slots = kwargs.pop("slots", None)
             
-        # Apply slots if provided
-        if slots:
-            from pyxie.slots import fill_slots
-            # Convert slot values to lists as required by fill_slots
-            slot_blocks = {name: [value] if not isinstance(value, list) else value 
-                          for name, value in slots.items()}
-            result = fill_slots(layout_xml, slot_blocks)
-            return result.element
+            # Call the layout function
+            result = self.func(*args, **kwargs)
             
-        return layout_xml
+            # Handle different return types
+            if isinstance(result, tuple) and all(isinstance(item, FT) for item in result):                
+                layout_xml = to_xml(result)
+            elif isinstance(result, (FT, str)):
+                layout_xml = to_xml(result) if isinstance(result, FT) else result
+            else:
+                raise LayoutValidationError(
+                    f"Layout '{self.name}' must return a FastHTML component "
+                    f"or HTML string, got {type(result)}"
+                )
+                
+            # Apply slots if provided
+            if slots:
+                from pyxie.slots import process_slots_and_visibility
+                # Pass slot values directly without converting to lists
+                result = process_slots_and_visibility(layout_xml, slots)
+                if not result.was_filled:
+                    log(logger, "Layouts", "error", "create", 
+                        f"Failed to fill slots in layout '{self.name}': {result.error}")
+                return result.element
+                
+            return layout_xml
+            
+        except Exception as e:
+            log(logger, "Layouts", "error", "create", f"Error creating layout '{self.name}': {e}")
+            raise
 
 @dataclass
 class LayoutRegistry:

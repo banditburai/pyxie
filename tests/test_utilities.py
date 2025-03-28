@@ -3,6 +3,13 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 from unittest.mock import MagicMock, patch
+import pytest
+from typing import List, Dict, Any
+from io import StringIO
+from mistletoe import Document
+from mistletoe.block_token import add_token
+from fastcore.xml import FT, Div, H1, P, Span
+from pyxie.parser import FastHTMLToken, ScriptToken, NestedContentToken
 
 from pyxie.utilities import (
     # HTML-related functions
@@ -31,7 +38,6 @@ from pyxie.utilities import (
 )
 
 from pyxie.errors import format_error_html
-from pyxie.types import ContentBlock
 
 
 class TestHtmlUtilities:
@@ -339,7 +345,7 @@ class TestModuleImportUtilities:
     """Tests for module import utilities."""
     
     def test_safe_import_standard_module(self):
-        """Test importing a standard library module."""
+        """Test importing a standard Python module."""
         # Import os module
         result = safe_import("os")
         assert result is not None
@@ -433,4 +439,50 @@ Content here
         # Load the content
         item2 = load_content_file(test_file2)
         assert item2 is not None
-        assert item2.slug == "another-test"  # Should use the filename-based slug 
+        assert item2.slug == "another-test"  # Should use the filename-based slug
+
+    def test_load_content_file(self, tmp_path):
+        """Test loading content files with frontmatter."""
+        # Create a test file with frontmatter
+        test_file = tmp_path / "test.md"
+        test_file.write_text("""---
+title: Test Post
+layout: default
+---
+# Test Content
+This is a test.""")
+
+        # Test basic loading
+        result = load_content_file(test_file)
+        assert result is not None
+        assert result.metadata["title"] == "Test Post"
+        assert result.metadata["layout"] == "default"
+        assert "# Test Content" in result.content
+        
+        # Test with default metadata
+        default_meta = {"author": "Test Author", "layout": "post"}
+        result = load_content_file(test_file, default_metadata=default_meta)
+        assert result is not None
+        assert result.metadata["author"] == "Test Author"
+        assert result.metadata["layout"] == "default"  # File metadata overrides default
+        
+        # Test error handling for nonexistent file
+        logger_mock = MagicMock()
+        result = load_content_file(tmp_path / "nonexistent.md", logger_instance=logger_mock)
+        assert result is None
+        logger_mock.error.assert_called_once()
+        
+        # Test with invalid frontmatter - should still load with empty metadata
+        invalid_file = tmp_path / "invalid.md"
+        invalid_file.write_text("""---
+invalid: [yaml
+---
+Content""")
+        
+        logger_mock = MagicMock()
+        result = load_content_file(invalid_file, logger_instance=logger_mock)
+        assert result is not None
+        assert "Content" in result.content
+        # Should use default metadata since frontmatter was invalid
+        assert result.metadata["layout"] == "default"
+        assert result.metadata["author"] == "Anonymous" 

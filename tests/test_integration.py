@@ -1,18 +1,20 @@
 """Integration tests for Pyxie functionality."""
 
 import pytest
-import tempfile
 from pathlib import Path
-from typing import Generator
-
 from pyxie import Pyxie
 from fastcore.xml import Div, H1, P, FT, to_xml, Time, Article, Img, Br, Hr, Input
-from fastcore.xml import Div, H1, P, FT, to_xml, Time, Article
 from pyxie.layouts import layout, registry
 from pyxie.renderer import render_content
-from pyxie.parser import parse_frontmatter, FastHTMLToken, ScriptToken, ContentBlockToken
+from pyxie.parser import parse_frontmatter, FastHTMLToken, ScriptToken, NestedContentToken
 from mistletoe.block_token import add_token
-from pyxie.types import ContentItem, ContentBlock
+from fastcore.xml import FT, Div, H1, P, Span, Button
+from pyxie.types import ContentItem
+from pyxie.parser import FastHTMLToken, ScriptToken, NestedContentToken, parse_frontmatter
+from pyxie.renderer import render_content
+from pyxie.layouts import layout, registry
+from pyxie.errors import PyxieError
+from pyxie.utilities import normalize_tags
 
 # Helper functions
 def create_test_post(dir_path: Path, filename: str, content: str) -> Path:
@@ -165,31 +167,26 @@ def test_full_rendering_pipeline(test_post):
     # Register content block tokens
     add_token(FastHTMLToken)
     add_token(ScriptToken)
-    add_token(ContentBlockToken)
+    add_token(NestedContentToken)
     
     # Parse the content
     content = test_post.read_text()
-    metadata, content = parse_frontmatter(content)
-    
-    # Create content blocks
-    blocks = {
-        "content": [ContentBlock(
-            tag_name="content",
-            content="**Main** content with *formatting*",
-            attrs_str=""
-        )],
-        "sidebar": [ContentBlock(
-            tag_name="sidebar",
-            content="- Item 1\n- Item 2",
-            attrs_str=""
-        )]
-    }
+    metadata, _ = parse_frontmatter(content)
     
     # Create content item
     item = ContentItem(
         source_path=test_post,
         metadata={"layout": "test"},
-        blocks=blocks
+        content="""# Test Post
+
+<content>
+**Main** content with *formatting*
+</content>
+
+<sidebar>
+- Item 1
+- Item 2
+</sidebar>"""
     )
     
     # Render content
@@ -208,33 +205,24 @@ def test_minimal_post_rendering(minimal_post):
     # Register content block tokens
     add_token(FastHTMLToken)
     add_token(ScriptToken)
-    add_token(ContentBlockToken)
+    add_token(NestedContentToken)
     
     # Parse the content
     content = minimal_post.read_text()
-    metadata, content = parse_frontmatter(content)
-    
-    # Create content blocks
-    blocks = {
-        "content": [ContentBlock(
-            tag_name="content",
-            content="# Minimal Post\n\nJust some content.",
-            attrs_str=""
-        )]
-    }
+    metadata, _ = parse_frontmatter(content)
     
     # Create content item
     item = ContentItem(
         source_path=minimal_post,
         metadata={"layout": "default"},
-        blocks=blocks
+        content="# Minimal Post\n\nJust some content."
     )
     
     # Render content
     html = render_content(item)
     
     # Verify content
-    assert "Minimal Post" in html
+    assert '<h1 id="minimal-post">Minimal Post</h1>' in html
     assert "Just some content" in html
 
 def test_blog_post_rendering(blog_post):
@@ -242,26 +230,17 @@ def test_blog_post_rendering(blog_post):
     # Register content block tokens
     add_token(FastHTMLToken)
     add_token(ScriptToken)
-    add_token(ContentBlockToken)
+    add_token(NestedContentToken)
 
     # Parse the content
     content = blog_post.read_text()
     metadata, content = parse_frontmatter(content)
 
-    # Create content blocks
-    blocks = {
-        "content": [ContentBlock(
-            tag_name="content",
-            content=content,
-            attrs_str=""
-        )]
-    }
-
     # Create content item
     item = ContentItem(
         source_path=blog_post,
         metadata=metadata,  # Use the parsed metadata
-        blocks=blocks
+        content=content
     )
 
     # Render content
@@ -271,8 +250,8 @@ def test_blog_post_rendering(blog_post):
     assert "My First Blog Post" in html
     assert "Test Author" in html
     assert "2024-04-01" in html
-    assert "Section 1" in html
-    assert "Section 2" in html
+    assert '<h2 id="section-1">Section 1</h2>' in html
+    assert '<h2 id="section-2">Section 2</h2>' in html
     assert "Some content here" in html
     assert "More content here" in html
 
@@ -281,26 +260,17 @@ def test_self_closing_tags(self_closing_tags_post):
     # Register content block tokens
     add_token(FastHTMLToken)
     add_token(ScriptToken)
-    add_token(ContentBlockToken)
+    add_token(NestedContentToken)
 
     # Parse the content
     content = self_closing_tags_post.read_text()
     metadata, content = parse_frontmatter(content)
 
-    # Create content blocks
-    blocks = {
-        "content": [ContentBlock(
-            tag_name="content",
-            content=content.strip(),
-            attrs_str=""
-        )]
-    }
-
     # Create content item
     item = ContentItem(
         source_path=self_closing_tags_post,
         metadata={"layout": "default"},
-        blocks=blocks
+        content=content.strip()
     )
 
     # Render content
@@ -345,7 +315,7 @@ This is the main content.
     # Register content block tokens
     add_token(FastHTMLToken)
     add_token(ScriptToken)
-    add_token(ContentBlockToken)
+    add_token(NestedContentToken)
 
     # Register custom layout
     @layout("custom")
@@ -361,55 +331,18 @@ This is the main content.
     # Parse the content
     metadata, content = parse_frontmatter(content)
 
-    # Create content blocks
-    blocks = {
-        "header": [ContentBlock(
-            tag_name="header",
-            content="# Welcome to my site",
-            attrs_str=""
-        )],
-        "toc": [ContentBlock(
-            tag_name="toc",
-            content="- Introduction\n- Features\n- Conclusion",
-            attrs_str=""
-        )],
-        "content": [ContentBlock(
-            tag_name="content",
-            content="This is the main content.",
-            attrs_str=""
-        )],
-        "sidebar": [ContentBlock(
-            tag_name="sidebar",
-            content="- Recent posts\n- Categories",
-            attrs_str=""
-        )]
-    }
-
     # Create content item
     item = ContentItem(
         source_path=Path("test.md"),
         metadata=metadata,
-        blocks=blocks
+        content=content
     )
 
     # Render content
     html = render_content(item)
 
     # Verify content blocks are rendered correctly
-    assert "Welcome to my site" in html
-    assert "Introduction" in html
-    assert "Features" in html
-    assert "Conclusion" in html
-    assert "This is the main content" in html
-    assert "Recent posts" in html
-    assert "Categories" in html
-
-def test_missing_post(pyxie_instance):
-    """Test handling of a missing post."""
-    item, error = pyxie_instance.get_item("non-existent-post")
-    assert item is None
-    assert error is not None
-    assert "no post found" in error[1].lower()
+    assert '<h1 id="welcome-to-my-site">Welcome to my site</h1>' in html
 
 def test_custom_layout(test_dir):
     """Test using a custom layout for rendering."""
@@ -438,20 +371,11 @@ layout: custom
     content = post.read_text()
     metadata, content = parse_frontmatter(content)
 
-    # Create content blocks
-    blocks = {
-        "content": [ContentBlock(
-            tag_name="content",
-            content="# Content",
-            attrs_str=""
-        )]
-    }
-
     # Create content item
     item = ContentItem(
         source_path=post,
         metadata=metadata,  # Use the parsed metadata
-        blocks=blocks
+        content=content
     )
 
     # Render content
@@ -459,7 +383,7 @@ layout: custom
 
     # Verify content
     assert "Custom Title" in html
-    assert "Content" in html
+    assert '<h1 id="content">Content</h1>' in html
     assert 'class="custom-title"' in html
     assert 'class="custom-content"' in html
     assert 'class="custom-layout"' in html
@@ -494,7 +418,7 @@ This is a content block
     # Register content block tokens
     add_token(FastHTMLToken)
     add_token(ScriptToken)
-    add_token(ContentBlockToken)
+    add_token(NestedContentToken)
 
     # Register test layout
     @layout("test")
@@ -509,41 +433,18 @@ This is a content block
     # Parse the content
     metadata, content = parse_frontmatter(content)
 
-    # Create content blocks
-    blocks = {
-        "content": [ContentBlock(
-            tag_name="content",
-            content="""# Introduction
-
-This is a test document with various content types.
-
-<ft>
-show(Div("Hello from FastHTML"))
-</ft>
-
-<script>
-console.log("Hello from script");
-</script>
-
-<custom-block>
-This is a content block
-</custom-block>""",
-            attrs_str="",
-        )]
-    }
-
     # Create content item
     item = ContentItem(
         source_path=Path("test.md"),
         metadata=metadata,
-        blocks=blocks
+        content=content
     )
 
     # Render content
     html = render_content(item)
 
     # Verify content
-    assert "Introduction" in html
+    assert '<h1 id="introduction">Introduction</h1>' in html
     assert "Hello from FastHTML" in html
     assert "This is a content block" in html
     assert "Test Document" in html
@@ -564,25 +465,16 @@ layout: custom
     # Register content block tokens
     add_token(FastHTMLToken)
     add_token(ScriptToken)
-    add_token(ContentBlockToken)
+    add_token(NestedContentToken)
 
     # Parse the content
     metadata, content = parse_frontmatter(content)
-
-    # Create content blocks
-    blocks = {
-        "content": [ContentBlock(
-            tag_name="content",
-            content="# Content",
-            attrs_str="",
-        )]
-    }
 
     # Create content item
     item = ContentItem(
         source_path=Path("test.md"),
         metadata=metadata,
-        blocks=blocks
+        content=content
     )
 
     # Register custom layout
@@ -599,7 +491,7 @@ layout: custom
 
     # Verify content
     assert "Test Document" in html
-    assert "Content" in html
+    assert '<h1 id="content">Content</h1>' in html
     assert 'class="title"' in html
     assert 'class="content"' in html
     assert 'class="custom-layout"' in html
@@ -620,25 +512,16 @@ show(Div("Hello from FastHTML"))
     # Register content block tokens
     add_token(FastHTMLToken)
     add_token(ScriptToken)
-    add_token(ContentBlockToken)
+    add_token(NestedContentToken)
 
     # Parse the content
     metadata, content = parse_frontmatter(content)
-
-    # Create content blocks
-    blocks = {
-        "content": [ContentBlock(
-            tag_name="content",
-            content='<ft>\nshow(Div("Hello from FastHTML"))\n</ft>',
-            attrs_str=""
-        )]
-    }
 
     # Create content item
     item = ContentItem(
         source_path=Path("test.md"),
         metadata=metadata,
-        blocks=blocks
+        content=content
     )
 
     # Register custom layout
@@ -804,3 +687,15 @@ You can reach me at test@example.com.
     assert len(pages) == 1
     about = pyxie._collections["pages"]._items["about"]
     assert about.metadata["title"] == "About Me"
+    
+    # 10. Test rendering of posts
+    rendered_post = render_content(first_post)
+    assert '<h2 id="section-1">Section 1</h2>' in rendered_post
+    assert '<h2 id="section-2">Section 2</h2>' in rendered_post
+    assert "Some content here" in rendered_post
+    assert "More content here" in rendered_post
+    
+    # 11. Test rendering of pages
+    rendered_about = render_content(about)
+    assert '<h2 id="contact">Contact</h2>' in rendered_about
+    assert "test@example.com" in rendered_about

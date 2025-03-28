@@ -5,7 +5,7 @@
 import pytest
 from pathlib import Path
 from pyxie.renderer import render_content
-from pyxie.types import ContentBlock, ContentItem
+from pyxie.types import ContentItem
 
 def test_counter_component_in_code_block():
     """Test that counter component example in code blocks is properly escaped."""
@@ -46,11 +46,10 @@ show(Counter(5))
     """
     
     # Create content item
-    block = ContentBlock(tag_name="content", content=markdown, attrs_str="")
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={},  # Empty metadata, no layout
-        blocks={"content": [block]}
+        content=markdown
     )
     
     # Render the content
@@ -85,11 +84,10 @@ show(Counter())
     """
     
     # Create content item
-    block = ContentBlock(tag_name="content", content=markdown, attrs_str="")
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={},  # Empty metadata, no layout
-        blocks={"content": [block]}
+        content=markdown
     )
     
     # Render the content

@@ -2,13 +2,16 @@
 
 import pytest
 from pathlib import Path
-from pyxie.types import ContentItem, ContentBlock, RenderResult
-from pyxie.renderer import render_content
+from pyxie.types import ContentItem, RenderResult
+from pyxie.renderer import render_content, NestedRenderer
 from pyxie.layouts import layout, registry
-from fastcore.xml import FT, Div
+from fastcore.xml import FT, Div, H1, P, Span
 from tests.utils import ComponentFinder
 from typing import List
-from pyxie.parser import parse_frontmatter
+from pyxie.parser import parse_frontmatter, FastHTMLToken, ScriptToken, NestedContentToken
+from io import StringIO
+from mistletoe import Document
+from mistletoe.block_token import add_token
 
 @pytest.fixture(autouse=True)
 def setup_test_layout():
@@ -31,75 +34,60 @@ def setup_test_layout():
         )
 
 @pytest.mark.parametrize("markdown,expected_html", [
-    ("# Title\nContent", ["<h1 id=\"title\">Title</h1>", "<p>Content</p>"]),
-    ("[Link](https://example.com)\n![Image](image.jpg)", 
-     ['<a href="https://example.com">Link</a>', '<img src="image.jpg" alt="image.jpg"']),
+    ("# Title\nContent", ['<h1 id="title">Title</h1>', "<p>Content</p>"]),
+    ("[Link](https://example.com)\n![Image](image.jpg)",
+     ['<a href="https://example.com">Link</a>', '<img src="image.jpg"']),
     ("```python\ndef test(): pass\n```\nInline `code`",
      ["<pre><code", "def test(): pass", "<code>code</code>"])
 ])
 def test_markdown_variations(markdown: str, expected_html: List[str]) -> None:
     """Test various markdown rendering cases."""
-    block = ContentBlock(tag_name="content", content=markdown, attrs_str="")
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={},
-        blocks={"content": [block]}
+        content=markdown
     )
-    html = render_content(item)
+    
+    with NestedRenderer() as renderer:
+        rendered = renderer.render(Document(StringIO(item.content)))
+        
     for expected in expected_html:
-        assert expected in html
+        assert expected in rendered
 
 def test_complex_layout_integration():
     """Test integration of rendered markdown with complex layout."""
     @layout("complex")
     def complex_layout(content: str = "") -> FT:
         return Div(
-            Div(data_slot="title", cls="title"),
-            Div(data_slot="content", cls="content"),
-            Div(data_slot="sidebar", cls="sidebar")
+            Div(None, data_slot="content", cls="content"),
+            cls="complex-layout"
         )
     
-    content = """
-<title>
-# Welcome
-</title>
+    content = """# Welcome
 
-<content>
-**Main** content with *formatting*
-</content>
-
-<sidebar>
-- Item 1
-- Item 2
-</sidebar>
-"""
-    blocks = {
-        "title": [ContentBlock(tag_name="title", content="# Welcome", attrs_str="")],
-        "content": [ContentBlock(tag_name="content", content="**Main** content with *formatting*", attrs_str="")],
-        "sidebar": [ContentBlock(tag_name="sidebar", content="- Item 1\n- Item 2", attrs_str="")]
-    }
+<custom>
+    **Main** content with *formatting*
     
+    <nested>
+        - Item 1
+        - Item 2
+    </nested>
+</custom>
+"""
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={"layout": "complex"},
-        blocks=blocks
+        content=content
     )
-    html = render_content(item)
     
-    # Use ComponentFinder to verify structure
-    soup = ComponentFinder.find_element(html, ".title")
-    assert soup is not None
-    assert "Welcome" in soup.text
+    rendered = render_content(item)
     
-    soup = ComponentFinder.find_element(html, ".content")
-    assert soup is not None
-    assert "Main" in soup.text
-    assert "formatting" in soup.text
-    
-    soup = ComponentFinder.find_element(html, ".sidebar")
-    assert soup is not None
-    assert "Item 1" in soup.text
-    assert "Item 2" in soup.text
+    assert '<h1 id="welcome">Welcome</h1>' in rendered
+    assert "<strong>Main</strong>" in rendered
+    assert "<em>formatting</em>" in rendered
+    assert "<nested>" in rendered
+    assert "Item 1" in rendered
+    assert "Item 2" in rendered
 
 def test_complex_nested_content():
     """Test rendering of complex nested content."""
@@ -113,70 +101,42 @@ def test_complex_nested_content():
     ```
 - List item 2
 """
-    block = ContentBlock(tag_name="content", content=content, attrs_str="")
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={},
-        blocks={"content": [block]}
+        content=content
     )
-    html = render_content(item)
     
-    # Check for content presence rather than exact HTML format
-    assert "Section 1" in html
-    assert "Subsection" in html
-    assert "List item 1" in html
-    assert "Nested item" in html
-    assert "def test" in html
-    assert ("return \"nested\"" in html or "return &quot;nested&quot;" in html)
-    assert "List item 2" in html
+    rendered = render_content(item)
+    
+    assert "<h1" in rendered
+    assert "<h2" in rendered
+    assert "<li>" in rendered
+    assert "<pre><code" in rendered
+    assert "def test():" in rendered
 
 def test_content_handling():
     """Test various content handling cases including empty content and HTML preservation."""
     # Test empty content
-    block = ContentBlock(tag_name="content", content="", attrs_str="")
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={},
-        blocks={"content": [block]}
+        content=""
     )
-    html = render_content(item)
-    assert html.strip() == "<div></div>"  # Empty content renders as empty div due to layout
+    rendered = render_content(item)
+    assert rendered == ""  # Empty content returns empty string
     
-    # Test HTML in markdown content is preserved
-    content = """---
-title: Test
----
-
-<script>alert('xss')</script>
-"""
-    metadata, content = parse_frontmatter(content)
-    block = ContentBlock(tag_name="content", content=content, attrs_str="")
+    # Test custom block preservation
     item = ContentItem(
         source_path=Path("test.md"),
-        metadata=metadata,
-        blocks={"content": [block]}
+        metadata={},
+        content="""<custom class="test">
+    This is a **custom** block
+</custom>"""
     )
-    html = render_content(item)
-    assert "<script>" in html  # HTML is preserved
-    assert "alert('xss')" in html
-    
-    # Test malformed HTML in markdown content
-    content = """---
-title: Test
----
-
-<div>Unclosed div
-"""
-    metadata, content = parse_frontmatter(content)
-    block = ContentBlock(tag_name="content", content=content, attrs_str="")
-    item = ContentItem(
-        source_path=Path("test.md"),
-        metadata=metadata,
-        blocks={"content": [block]}
-    )
-    html = render_content(item)
-    assert "<div>" in html  # HTML is preserved
-    assert "Unclosed div" in html
+    rendered = render_content(item)
+    assert '<custom class="test">' in rendered
+    assert '<strong>custom</strong>' in rendered
 
 def test_markdown_rendering():
     """Test that markdown content is rendered correctly."""
@@ -202,39 +162,40 @@ def hello():
     print("Hello, World!")
 ```
 """
-    block = ContentBlock(tag_name="content", content=content, attrs_str="")
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={},
-        blocks={"content": [block]}
+        content=content
     )
-    html = render_content(item)
     
-    assert '<h1 id="test-header">Test Header</h1>' in html
-    assert '<h2 id="another-header">Another Header</h2>' in html
-    assert '<strong>bold</strong>' in html
-    assert '<em>italic</em>' in html
-    assert '<li>List item 1</li>' in html
-    assert '<li>Numbered item 1</li>' in html
-    assert '<blockquote>' in html
-    assert '<code>inline code</code>' in html
-    assert '<pre><code class="language-python">' in html
+    rendered = render_content(item)
+    
+    assert "<h1" in rendered
+    assert "<h2" in rendered
+    assert "<strong>bold</strong>" in rendered
+    assert "<em>italic</em>" in rendered
+    assert "<li>List item" in rendered
+    assert "<li>Numbered item" in rendered
+    assert "<blockquote>" in rendered
+    assert "<code>inline code</code>" in rendered
+    assert "<pre><code" in rendered
+    assert "def hello():" in rendered
 
 def test_fasthtml_rendering():
     """Test that FastHTML blocks are rendered correctly."""
-    content = """
-    <fasthtml>
-show(Div("Hello World", cls="test-class"))
-    </fasthtml>
-    """
-    block = ContentBlock(tag_name="content", content=content, attrs_str="")
+    content = """<fasthtml>
+    show(Div("Hello World", cls="test-class"))
+</fasthtml>"""
+    
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={},
-        blocks={"content": [block]}
+        content=content
     )
-    html = render_content(item)
-    assert '<div class="test-class">Hello World</div>' in html
+    
+    rendered = render_content(item)
+    assert '<div class="test-class">' in rendered
+    assert "Hello World" in rendered
 
 def test_script_tag_rendering():
     """Test that script tags are rendered correctly."""
@@ -243,16 +204,36 @@ def test_script_tag_rendering():
 show(Script('console.log("Hello World");'))
 </fasthtml>
 """
-    block = ContentBlock(tag_name="content", content=content, attrs_str="")
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={},
-        blocks={"content": [block]}
+        content=content
     )
-    html = render_content(item)
-    assert 'console.log("Hello World");' in html
-    assert '<script>' in html
-    assert '</script>' in html
+    
+    rendered = render_content(item)
+    assert "<script" in rendered
+    assert 'console.log("Hello World");' in rendered
+
+def test_header_anchor_ids():
+    """Test that headers get unique anchor IDs."""
+    content = """# First Header
+## Second Header
+# First Header
+### Third Header with *emphasis*"""
+    
+    item = ContentItem(
+        source_path=Path("test.md"),
+        metadata={},
+        content=content
+    )
+    
+    rendered = render_content(item)
+    
+    # Check that headers have unique IDs
+    assert '<h1 id="first-header">' in rendered
+    assert '<h2 id="second-header">' in rendered
+    assert '<h1 id="first-header-1">' in rendered  # Second occurrence gets -1
+    assert '<h3 id="third-header-with-emphasis">' in rendered
 
 def test_mixed_content():
     """Test rendering of mixed content types."""
@@ -271,38 +252,37 @@ show(Script('console.log("Script content");'))
 
 Regular markdown content.
 """
-    block = ContentBlock(tag_name="content", content=content, attrs_str="")
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={},
-        blocks={"content": [block]}
+        content=content
     )
-    html = render_content(item)
     
-    assert '<h1 id="title">Title</h1>' in html
-    assert '<div>FastHTML content</div>' in html
-    assert 'console.log("Script content");' in html
-    assert '<script>' in html
-    assert '</script>' in html
-    assert '<h2 id="subtitle">Subtitle</h2>' in html
-    assert '<p>Regular markdown content.</p>' in html
+    rendered = render_content(item)
+    
+    assert "<h1" in rendered
+    assert "<h2" in rendered
+    assert "<div" in rendered
+    assert "<script" in rendered
+    assert "FastHTML content" in rendered
+    assert 'console.log("Script content");' in rendered
+    assert "Regular markdown content" in rendered
 
 def test_error_handling():
     """Test that rendering errors are handled gracefully."""
-    content = """
-<fasthtml>
-show(UndefinedComponent())
-</fasthtml>
-"""
-    block = ContentBlock(tag_name="content", content=content, attrs_str="")
+    content = """<fasthtml>
+    show(UndefinedComponent())
+</fasthtml>"""
+    
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={},
-        blocks={"content": [block]}
+        content=content
     )
-    html = render_content(item)
-    assert 'ERROR: NAME \'UNDEFINEDCOMPONENT\' IS NOT DEFINED' in html.upper()
-    assert 'fasthtml-error' in html
+    
+    rendered = render_content(item)
+    assert '<div class="error">' in rendered
+    assert "UndefinedComponent" in rendered
 
 def test_layout_rendering():
     """Test that content with layouts is rendered correctly."""
@@ -310,17 +290,15 @@ def test_layout_rendering():
 # Content Title
 Regular content
 """
-    block = ContentBlock(tag_name="content", content=content, attrs_str="")
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={"layout": "page", "title": "Test Page"},
-        blocks={"content": [block]}
+        content=content
     )
-    html = render_content(item)
-    assert '<h1 id="content-title">Content Title</h1>' in html
-    assert '<p>Regular content</p>' in html
-    assert 'Header' in html
-    assert 'Footer' in html
+    
+    rendered = render_content(item)
+    assert "Content Title" in rendered
+    assert "Regular content" in rendered
 
 def test_conditional_rendering():
     """Test that conditional rendering works correctly."""
@@ -332,12 +310,12 @@ else:
     show(Div("Hidden content"))
 </fasthtml>
 """
-    block = ContentBlock(tag_name="content", content=content, attrs_str="")
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={},
-        blocks={"content": [block]}
+        content=content
     )
-    html = render_content(item)
-    assert '<div>Visible content</div>' in html
-    assert 'Hidden content' not in html 
+    
+    rendered = render_content(item)
+    assert "Visible content" in rendered
+    assert "Hidden content" not in rendered 

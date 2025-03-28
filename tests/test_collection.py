@@ -9,7 +9,8 @@ from unittest.mock import patch
 from dataclasses import dataclass
 from datetime import date
 
-from pyxie.types import ContentItem, ContentBlock
+from pyxie.types import ContentItem
+from pyxie.parser import NestedContentToken
 from pyxie.errors import CollectionError
 from pyxie.parser import parse_frontmatter
 
@@ -19,15 +20,15 @@ class MockParsedContent:
     """Mock for parsed content."""
     content: str
     metadata: Dict[str, Any]
-    blocks: Dict[str, list[ContentBlock]] = None
+    blocks: Dict[str, list[NestedContentToken]] = None
     
-    def get_block(self, name: str) -> Optional[ContentBlock]:
+    def get_block(self, name: str) -> Optional[NestedContentToken]:
         """Get a block by name."""
         if self.blocks and name in self.blocks:
             return self.blocks[name][0]
         return None
     
-    def get_blocks(self, name: str) -> list[ContentBlock]:
+    def get_blocks(self, name: str) -> list[NestedContentToken]:
         """Get all blocks with the given name."""
         if self.blocks and name in self.blocks:
             return self.blocks[name]

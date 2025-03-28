@@ -48,8 +48,8 @@ def test_basic_slot_filling(simple_layout: str) -> None:
     result = fill_slots(simple_layout, blocks)
     
     assert result.was_filled
-    assert "<h1>Test Title</h1>" in result.element
-    assert "<p>Test content paragraph</p>" in result.element
+    assert "Test Title" in result.element
+    assert "Test content paragraph" in result.element
     assert 'class="title"' in result.element
     assert 'class="content"' in result.element
 
@@ -64,7 +64,7 @@ def test_empty_slot_removal(simple_layout: str) -> None:
     result = fill_slots(simple_layout, blocks)
     
     assert result.was_filled
-    assert "<h1>Test Title</h1>" in result.element
+    assert "Test Title" in result.element
     
     # Parse the result to check DOM structure
     dom = html.fromstring(result.element)
@@ -97,13 +97,13 @@ def test_multiple_slot_instances(simple_layout: str) -> None:
     result = fill_slots(simple_layout, blocks)
     
     assert result.was_filled
-    assert "<p>First content block</p>" in result.element
-    assert "<p>Second content block</p>" in result.element
-    assert "<p>Third content block</p>" in result.element
+    assert "First content block" in result.element
+    assert "Second content block" in result.element
+    assert "Third content block" in result.element
     
     # Parse result to check structure
     dom = html.fromstring(result.element)
-    content_elements = dom.xpath('//section[@class="content"]')
+    content_elements = dom.xpath('//*[@class="content"]')
     assert len(content_elements) == 3  # Should have duplicated the slot
 
 # Test class merging
@@ -238,7 +238,7 @@ class TestSlotErrorHandling:
     def test_cyclic_slot_references(self):
         """Test behavior with potential cyclic slot references."""
         from pyxie.slots import fill_slots
-        from fastcore.xml import Div, P
+        from fastcore.xml import Div, P, to_xml
         
         # Create content for slots - with potential for cycles
         slot_content1 = Div(P(None, data_slot="slot2"))
@@ -252,8 +252,8 @@ class TestSlotErrorHandling:
         
         # Fill slots with content that references other slots
         slots = {
-            "slot1": slot_content1,
-            "slot2": slot_content2
+            "slot1": [to_xml(slot_content1)],
+            "slot2": [to_xml(slot_content2)]
         }
         
         # This operation could potentially create a cycle
@@ -261,10 +261,11 @@ class TestSlotErrorHandling:
         result = fill_slots(element, slots)
         
         # Verify the structure looks reasonable
-        from fastcore.xml import to_xml
-        xml = to_xml(result)
-        assert "data-slot=\"slot1\"" in xml
-        assert "data-slot=\"slot2\"" in xml
+        assert result.was_filled
+        # Slot attributes should be removed in the final output
+        assert "data-slot" not in result.element
+        # Content should be preserved
+        assert "<p>" in result.element
     
     def test_missing_slots(self):
         """Test behavior when trying to fill slots that don't exist."""

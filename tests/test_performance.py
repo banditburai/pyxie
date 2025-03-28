@@ -5,16 +5,12 @@ import time
 from pathlib import Path
 from typing import Dict, Any
 from mistletoe.block_token import add_token
-from pyxie.parser import parse_frontmatter, FastHTMLToken, ScriptToken, ContentBlockToken
-from pyxie.types import ContentItem, ContentBlock
+from pyxie.parser import parse_frontmatter, FastHTMLToken, ScriptToken
+from pyxie.types import ContentItem
 from pyxie.renderer import render_content
 from pyxie.layouts import layout
 from fasthtml.common import *
-
-# Register content block tokens
-add_token(FastHTMLToken)
-add_token(ScriptToken)
-add_token(ContentBlockToken)
+\
 
 @pytest.fixture
 def test_content(request) -> str:
@@ -151,40 +147,40 @@ def test_slot_filling_performance():
             cls="layout"
         )
     
-    # Create content blocks
-    blocks = {
-        "header": [ContentBlock(
-            tag_name="header",
-            content="# Site Header",
-            attrs_str=""
-        )],
-        "nav": [ContentBlock(
-            tag_name="nav",
-            content="- [Home](#)\n- [About](#)\n- [Contact](#)",
-            attrs_str=""
-        )],
-        "sidebar": [ContentBlock(
-            tag_name="sidebar",
-            content="## Categories\n- Category 1\n- Category 2\n- Category 3",
-            attrs_str=""
-        )],
-        "content": [ContentBlock(
-            tag_name="content",
-            content="# Main Content\n\nThis is the main content area.",
-            attrs_str=""
-        )],
-        "footer": [ContentBlock(
-            tag_name="footer",
-            content="© 2024 Test Site",
-            attrs_str=""
-        )]
-    }
+    # Create content with multiple sections
+    content = """<header>
+# Site Header
+</header>
+
+<nav>
+- [Home](#)
+- [About](#)
+- [Contact](#)
+</nav>
+
+<sidebar>
+## Categories
+- Category 1
+- Category 2
+- Category 3
+</sidebar>
+
+<content>
+# Main Content
+
+This is the main content area.
+</content>
+
+<footer>
+© 2024 Test Site
+</footer>
+"""
     
     # Create content item
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={"layout": "test", "title": "Test Page"},
-        blocks=blocks
+        content=content
     )
     
     start_time = time.time()
@@ -252,47 +248,20 @@ def TestComponent():
 
 show(TestComponent())
 </ft>
-
-### Script Example
-
-<script>
-console.log("Performance test");
-</script>
 </content>
 """
-    
-    # Register test layout
-    @layout("test")
-    def test_layout(title: str = "") -> FT:
-        return Div(
-            H1(title),
-            Div(None, data_slot="content"),
-            cls="test-layout"
-        )
-    
-    # Parse content
-    metadata, content = parse_frontmatter(content)
-    
-    # Create content blocks
-    blocks = {
-        "content": [ContentBlock(
-            tag_name="content",
-            content=content,
-            attrs_str=""
-        )]
-    }
     
     # Create content item
     item = ContentItem(
         source_path=Path("test.md"),
-        metadata=metadata,
-        blocks=blocks
+        metadata={"layout": "test", "title": "Test Page"},
+        content=content
     )
     
     start_time = time.time()
     
     # Render content multiple times
-    iterations = 50
+    iterations = 100
     for _ in range(iterations):
         html = render_content(item)
     
@@ -306,4 +275,4 @@ console.log("Performance test");
     print(f"Average time: {avg_time:.4f} seconds per render")
     
     # Assert reasonable performance
-    assert avg_time < 0.02, f"Rendering took too long: {avg_time:.4f} seconds per render" 
+    assert avg_time < 0.01, f"Rendering took too long: {avg_time:.4f} seconds per render" 

@@ -18,90 +18,117 @@ import logging
 from typing import Dict, Any, TypedDict, Union, Optional, List
 from pathlib import Path
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from .constants import DEFAULT_METADATA
+from .errors import log
 
 logger = logging.getLogger(__name__)
 
 @dataclass
 class ContentItem:
-    """A content item with metadata and content."""
-    source_path: Path
-    metadata: Dict[str, Any]
-    content: str
-    collection: Optional[str] = None
+    """A content item with flexible metadata and content handling.
     
-    # Protected property names that shouldn't be overwritten by metadata
-    PROTECTED_PROPERTIES = {
-        'source_path', 'metadata', 'content', 'collection',
-        'slug', 'status', 'title', 'tags', 'image',
-        'html', 'render'
-    }
+    All frontmatter key-value pairs are stored in metadata and accessible
+    as attributes. For example, if frontmatter has {"author": "John"},
+    you can access it as:
+        item.metadata["author"] or item.author
+    """
+    source_path: Path
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    content: str = ""  # Raw content string
+    
+    collection: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+    index: int = field(default=0)  # New field for unique indexing
+            
+    _cache: Any = field(default=None, repr=False)    
+    _pyxie: Any = field(default=None, repr=False)
+    
+    # Optional fields that can be derived
+    _slug: Optional[str] = field(default=None, repr=False)
+
+    def __post_init__(self):
+        """Add metadata keys as attributes for easy access."""
+        if "title" not in self.metadata and "slug" not in self.metadata:
+            # Get the stem from source_path if it's a Path, otherwise use the string
+            stem = self.source_path.stem if isinstance(self.source_path, Path) else str(self.source_path)
+            self.metadata["title"] = stem.replace("-", " ").title()
+    
+    def __getattr__(self, name: str) -> Any:
+        """Allow accessing metadata as attributes."""
+        if name in self.metadata:
+            return self.metadata[name]
+        raise AttributeError(f"'ContentItem' has no attribute '{name}'")
     
     @property
     def slug(self) -> str:
-        """Get the slug from metadata or source path."""
+        """Get the slug from metadata, explicit value, or source path."""
+        if self._slug is not None:
+            return self._slug
         return self.metadata.get("slug", self.source_path.stem)
-
-    def __post_init__(self):
-        """Initialize metadata."""
-        if not self.metadata:
-            self.metadata = {}
-            
-        # Set title from slug if not present
-        if "title" not in self.metadata and self.slug:
-            self.metadata["title"] = self.slug.replace("-", " ").title()
-            
-        # Add metadata keys as attributes for easy access
-        for key, value in self.metadata.items():
-            if key not in self.PROTECTED_PROPERTIES:
-                setattr(self, key, value)
-            
+    
+    @slug.setter
+    def slug(self, value: str) -> None:
+        """Set the slug value."""
+        self._slug = value
+    
+    @property
+    def title(self) -> str:
+        """Get item title from metadata or fall back to slug."""
+        if "title" in self.metadata:
+            return self.metadata["title"]
+        return self.slug.replace("-", " ").title()
+    
     @property
     def status(self) -> Optional[str]:
         """Get content status."""
         return self.metadata.get("status")
     
     @property
-    def title(self) -> str:
-        """Get item title."""
-        return self.metadata["title"]
-    
-    @property
     def tags(self) -> List[str]:
         """Get normalized list of tags."""
-        from .utilities import normalize_tags
         raw_tags = self.metadata.get("tags", [])
+        from .utilities import normalize_tags
         return normalize_tags(raw_tags)
+    
+    def _generate_image_seed(self) -> str:
+        """Generate a unique seed for image generation.
+        
+        Combines the content index and slug to ensure uniqueness across posts.
+        The index ensures uniqueness even if slugs are similar, while the slug
+        ensures consistent image generation for the same post.
+        """
+        # Remove special characters from slug to make it more URL-friendly
+        clean_slug = self.slug.replace("-", "").replace("_", "")
+        # Use index from metadata if available, otherwise use the default index
+        index = self.metadata.get("index", self.index)
+        # Combine index and slug to ensure uniqueness
+        return f"{index:04d}-{clean_slug}"
     
     @property
     def image(self) -> Optional[str]:
-        """Get image URL, using template if available."""
-        from .utilities import log
-        
+        """Get image URL, using template if available."""        
         if image := self.metadata.get("image"):
             return image                    
         if template := self.metadata.get("image_template"):
             try:
-                format_params = {"index": self.metadata.get("index"), "slug": self.slug}
+                format_params = {
+                    "index": self.metadata.get("index", self.index),
+                    "slug": self.slug,
+                    "seed": self._generate_image_seed()
+                }
                 format_params.update({
                     key: self.metadata[f"image_{key}"]
-                    for key in ["width", "height", "seed", "size", "color", "format"]
+                    for key in ["width", "height", "size", "color", "format"]
                     if f"image_{key}" in self.metadata
                 })
-                
-                if 'seed' not in format_params and '{seed}' in template:
-                    format_params['seed'] = self.slug.replace("-", "")
-                
                 return template.format(**format_params)
-            except (KeyError, ValueError) as e:
-                log(logger, "Types", "warning", "image", f"Failed to format template: {e}")
-                
-        return DEFAULT_METADATA["image_template"].format(
-            seed=self.slug,
-            width=DEFAULT_METADATA["image_width"],
-            height=DEFAULT_METADATA["image_height"]
-        ) if self.slug else None
+            except Exception as e:
+                log(logger, "ContentItem", "error", "image", f"Failed to format image URL: {e}")
+                return None
+        return None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -125,14 +152,14 @@ PathLike = Union[str, Path]
 
 @dataclass
 class RenderResult:
-    """Result of rendering a block."""
+    """Result of rendering content."""
     content: str = ""
     error: Optional[str] = None
 
     @property
     def success(self) -> bool:
-        """Check if render was successful."""
-        return self.error is None
+        """Return True if there is no error."""
+        return self.error is None and not 'class="error"' in self.content
 
 class Metadata(TypedDict, total=False):
     """Common metadata fields."""
@@ -142,17 +169,3 @@ class Metadata(TypedDict, total=False):
     tags: List[str]
     author: str
     description: str
-
-@dataclass
-class ContentBlock:
-    """A content block in a markdown document."""
-    tag_name: str
-    content: str
-    attrs_str: str
-    marker: Optional[str] = None
-    params: Dict[str, Any] = None    
-
-    def __post_init__(self):
-        """Initialize default values."""
-        if self.params is None:
-            self.params = {}

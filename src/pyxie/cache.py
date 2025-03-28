@@ -21,8 +21,8 @@ from pathlib import Path
 from typing import Optional, Protocol
 from contextlib import contextmanager
 
-from .errors import PyxieError
-from .utilities import log, normalize_path, hash_file
+from .errors import PyxieError, log
+from .utilities import normalize_path, hash_file
 
 logger = logging.getLogger(__name__)
 

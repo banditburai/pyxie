@@ -45,7 +45,11 @@ VALID_CONTENT_TYPES = {"markdown", "ft", "raw", "latex", "fasthtml"}
 FASTHTML_BLOCK_NAMES = frozenset({'ft', 'fasthtml'})
 
 # HTML tags
-SELF_CLOSING_TAGS = frozenset({'img', 'br', 'hr', 'input', 'meta', 'link', 'area', 'base', 'col', 'embed', 'param', 'source'})
+SELF_CLOSING_TAGS = frozenset({
+    'img', 'br', 'hr', 'input', 'meta', 'link', 'area', 'base', 'col', 
+    'embed', 'param', 'source', 'track', 'wbr'
+})
+
 PYXIE_SHOW_ATTR = "pyxie-show"
 
 class RequiredMetadata(Enum):

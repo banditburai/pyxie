@@ -20,8 +20,9 @@ from pathlib import Path
 from textwrap import dedent
 from fastcore.xml import FT
 import fasthtml.common as ft_common
-from .utilities import log, safe_import, RenderResult
+from .utilities import safe_import
 from .types import RenderResult
+from .errors import log
 
 logger = logging.getLogger(__name__)
 IMPORT_PATTERN = re.compile(r'^(?:from\s+([^\s]+)\s+import|import\s+([^#\n]+))', re.MULTILINE)

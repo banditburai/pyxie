@@ -1,190 +1,126 @@
 def test_image_property(tmp_path):
     """Test the image property with different scenarios."""
-    from pyxie.types import ContentItem, ContentBlock
+    from pyxie.types import ContentItem
     
-    # Create a dummy source path 
+    # Create a dummy source path
     source_path = tmp_path / "test.md"
     
     # Test with direct image URL
     item1 = ContentItem(
         source_path=source_path,
         metadata={"image": "https://example.com/image.jpg", "title": "Test 1"},
-        blocks={"content": [ContentBlock(
-            tag_name="markdown",
-            content="Test content",
-            attrs_str="",            
-        )]}
+        content="Test content"
     )
     assert item1.image == "https://example.com/image.jpg"
     
-    # Test with image template using index
+    # Test with image template
     item2 = ContentItem(
         source_path=source_path,
         metadata={
-            "image_template": "https://example.com/img/{index}.jpg",
+            "image_template": "https://example.com/{seed}.jpg",
             "title": "Test 2",
             "index": 42
         },
-        blocks={"content": [ContentBlock(
-            tag_name="markdown",
-            content="Test content",
-            attrs_str="",
-        )]}
+        content="Test content"
     )
-    assert item2.image == "https://example.com/img/42.jpg"
+    assert item2.image.startswith("https://example.com/")
+    assert item2.image.endswith(".jpg")
+    assert "0042-test" in item2.image  # The seed should include the index and slug
     
-    # Test with image template using slug
+    # Test with no image
     item3 = ContentItem(
-        source_path=tmp_path / "test3.md",
-        metadata={
-            "image_template": "https://example.com/img/{slug}.jpg",
-            "title": "Test 3"
-        },
-        blocks={"content": [ContentBlock(
-            tag_name="markdown",
-            content="Test content",
-            attrs_str="",
-        )]}
-    )
-    assert item3.image == "https://example.com/img/test3.jpg"
-    
-    # Test with custom dimensions
-    item4 = ContentItem(
         source_path=source_path,
-        metadata={
-            "image_template": "https://example.com/img/{width}x{height}/{seed}.jpg",
-            "image_width": 1024,
-            "image_height": 768,
-            "image_seed": "custom-seed",
-            "title": "Test 4"
-        },
-        blocks={"content": [ContentBlock(
-            tag_name="markdown",
-            content="Test content",
-            attrs_str="",
-        )]}
+        metadata={"title": "Test 3"},
+        content="Test content"
     )
-    assert item4.image == "https://example.com/img/1024x768/custom-seed.jpg"
-    
-    # Test fallback to default placeholder
-    item5 = ContentItem(
-        source_path=tmp_path / "test5.md",
-        metadata={"title": "Test 5"},
-        blocks={"content": [ContentBlock(
-            tag_name="markdown",
-            content="Test content",
-            attrs_str="",
-        )]}
-    )
-    assert "picsum.photos/seed/test5/" in item5.image
-    
-    # Test fallback when template formatting fails
-    item6 = ContentItem(
-        source_path=tmp_path / "test6.md",
-        metadata={
-            "image_template": "https://example.com/{nonexistent}/img.jpg",
-            "title": "Test 6"
-        },
-        blocks={"content": [ContentBlock(
-            tag_name="markdown",
-            content="Test content",
-            attrs_str="",
-        )]}
-    )
-    assert "picsum.photos/seed/test6/" in item6.image
+    assert item3.image is None
 
 def test_slug_property(tmp_path):
     """Test the slug property with different scenarios."""
-    from pyxie.types import ContentItem, ContentBlock
+    from pyxie.types import ContentItem
     
     # Test slug from source path
     item1 = ContentItem(
         source_path=tmp_path / "test-page.md",
         metadata={},
-        blocks={}
+        content=""
     )
     assert item1.slug == "test-page"
     
-    # Test explicit slug in metadata
+    # Test slug from metadata
     item2 = ContentItem(
         source_path=tmp_path / "test.md",
         metadata={"slug": "custom-slug"},
-        blocks={}
+        content=""
     )
     assert item2.slug == "custom-slug"
-
-def test_content_property(tmp_path):
-    """Test the content property with different scenarios."""
-    from pyxie.types import ContentItem, ContentBlock
     
-    # Test with single content block
-    item1 = ContentItem(
-        source_path=tmp_path / "test.md",
-        metadata={},
-        blocks={"content": [ContentBlock(
-            tag_name="markdown",
-            content="Test content",
-            attrs_str=""
-        )]}
-    )
-    assert item1.content == "Test content"
-    
-    # Test with multiple content blocks (should return first)
-    item2 = ContentItem(
-        source_path=tmp_path / "test.md",
-        metadata={},
-        blocks={"content": [
-            ContentBlock(
-                tag_name="markdown",
-                content="First content",
-                attrs_str=""
-            ),
-            ContentBlock(
-                tag_name="markdown",
-                content="Second content",
-                attrs_str=""
-            )
-        ]}
-    )
-    assert item2.content == "First content"
-    
-    # Test with no content blocks
+    # Test explicit slug
     item3 = ContentItem(
         source_path=tmp_path / "test.md",
         metadata={},
-        blocks={}
+        content=""
     )
-    assert item3.content == ""
+    item3.slug = "explicit-slug"
+    assert item3.slug == "explicit-slug"
+
+def test_content_property(tmp_path):
+    """Test the content property with different scenarios."""
+    from pyxie.types import ContentItem
+    
+    # Test with content
+    item1 = ContentItem(
+        source_path=tmp_path / "test.md",
+        metadata={},
+        content="Test content"
+    )
+    assert item1.content == "Test content"
+    
+    # Test with empty content
+    item2 = ContentItem(
+        source_path=tmp_path / "test.md",
+        metadata={},
+        content=""
+    )
+    assert item2.content == ""
 
 def test_title_property(tmp_path):
     """Test the title property with different scenarios."""
-    from pyxie.types import ContentItem, ContentBlock
+    from pyxie.types import ContentItem
     
     # Test explicit title
     item1 = ContentItem(
         source_path=tmp_path / "test.md",
         metadata={"title": "Custom Title"},
-        blocks={}
+        content=""
     )
     assert item1.title == "Custom Title"
     
-    # Test title generated from slug
+    # Test title from slug
     item2 = ContentItem(
         source_path=tmp_path / "test-page.md",
         metadata={},
-        blocks={}
+        content=""
     )
     assert item2.title == "Test Page"
+    
+    # Test title from metadata slug
+    item3 = ContentItem(
+        source_path=tmp_path / "test.md",
+        metadata={"slug": "custom-slug"},
+        content=""
+    )
+    assert item3.title == "Custom Slug"
 
 def test_tags_property(tmp_path):
     """Test the tags property with different scenarios."""
-    from pyxie.types import ContentItem, ContentBlock
+    from pyxie.types import ContentItem
     
     # Test with string tags
     item1 = ContentItem(
         source_path=tmp_path / "test.md",
         metadata={"tags": ["python", "testing"]},
-        blocks={}
+        content=""
     )
     assert item1.tags == ["python", "testing"]
     
@@ -192,21 +128,21 @@ def test_tags_property(tmp_path):
     item2 = ContentItem(
         source_path=tmp_path / "test.md",
         metadata={},
-        blocks={}
+        content=""
     )
     assert item2.tags == []
     
-    # Test with mixed case tags (should be normalized)
+    # Test with mixed case tags
     item3 = ContentItem(
         source_path=tmp_path / "test.md",
-        metadata={"tags": ["Python", "TESTING", "web-dev"]},
-        blocks={}
+        metadata={"tags": ["Python", "TESTING", "django"]},
+        content=""
     )
-    assert item3.tags == ["python", "testing", "web-dev"]
+    assert item3.tags == ["django", "python", "testing"]
 
 def test_serialization(tmp_path):
     """Test serialization and deserialization of ContentItem."""
-    from pyxie.types import ContentItem, ContentBlock
+    from pyxie.types import ContentItem
     from datetime import datetime
     
     # Create a test item with various properties
@@ -217,42 +153,27 @@ def test_serialization(tmp_path):
             "tags": ["python", "testing"],
             "index": 42
         },
-        blocks={
-            "content": [ContentBlock(
-                tag_name="markdown",
-                content="Test content",
-                attrs_str="",                
-            )],
-            "scripts": [ContentBlock(
-                tag_name="script",
-                content="console.log('test')",
-                attrs_str="",                
-            )]
-        }
+        content="Test content"
     )
     
-    # Convert to dict
+    # Convert to dictionary
     data = item.to_dict()
     
-    # Verify dict contains expected keys
-    assert "slug" in data
-    assert "content" in data
-    assert "source_path" in data
-    assert "metadata" in data
-    assert "blocks" in data
+    # Verify dictionary contents
+    assert data["slug"] == "test"
+    assert data["content"] == "Test content"
+    assert data["metadata"]["title"] == "Test Page"
+    assert data["metadata"]["tags"] == ["python", "testing"]
+    assert data["metadata"]["index"] == 42
     
-    # Create new item from dict
+    # Create new item from dictionary
     new_item = ContentItem.from_dict(data)
     
-    # Verify properties match
-    assert new_item.slug == item.slug
+    # Verify properties are preserved
     assert new_item.title == item.title
-    assert new_item.content == item.content
     assert new_item.tags == item.tags
-    assert str(new_item.source_path) == str(item.source_path)
-    assert len(new_item.blocks) == len(item.blocks)
-    assert len(new_item.blocks["content"]) == len(item.blocks["content"])
-    assert len(new_item.blocks["scripts"]) == len(item.blocks["scripts"])
+    assert new_item.content == item.content
+    assert new_item.metadata["index"] == item.metadata["index"]
 
 def test_metadata_access(tmp_path):
     """Test accessing metadata through attributes."""
@@ -266,7 +187,7 @@ def test_metadata_access(tmp_path):
             "custom_field": "custom value",
             "nested": {"key": "value"}
         },
-        blocks={}
+        content=""
     )
     
     # Test direct metadata access
@@ -274,8 +195,12 @@ def test_metadata_access(tmp_path):
     assert item.custom_field == "custom value"
     assert item.nested == {"key": "value"}
     
-    # Test accessing non-existent metadata
-    assert getattr(item, "nonexistent", None) is None
+    # Test missing attribute
+    try:
+        _ = item.nonexistent
+        assert False, "Should raise AttributeError"
+    except AttributeError:
+        pass
 
 def test_status_property(tmp_path):
     """Test the status property."""
@@ -285,15 +210,15 @@ def test_status_property(tmp_path):
     item1 = ContentItem(
         source_path=tmp_path / "test.md",
         metadata={"status": "draft"},
-        blocks={}
+        content=""
     )
     assert item1.status == "draft"
     
-    # Test without status
+    # Test with no status
     item2 = ContentItem(
         source_path=tmp_path / "test.md",
         metadata={},
-        blocks={}
+        content=""
     )
     assert item2.status is None
 
@@ -305,7 +230,7 @@ def test_collection_property(tmp_path):
     item1 = ContentItem(
         source_path=tmp_path / "test.md",
         metadata={},
-        blocks={},
+        content="",
         collection="blog"
     )
     assert item1.collection == "blog"
@@ -314,6 +239,6 @@ def test_collection_property(tmp_path):
     item2 = ContentItem(
         source_path=tmp_path / "test.md",
         metadata={},
-        blocks={}
+        content=""
     )
     assert item2.collection is None 

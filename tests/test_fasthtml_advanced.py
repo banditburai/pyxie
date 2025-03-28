@@ -18,7 +18,7 @@ from pyxie.fasthtml import (
     render_fasthtml, create_namespace,
     safe_import, process_imports, py_to_js, js_function,
 )
-from pyxie.types import ContentBlock, ContentItem, RenderResult
+from pyxie.types import ContentItem, RenderResult
 from pyxie.parser import ScriptToken, FastHTMLToken
 from pyxie.renderer import render_content
 from pyxie.layouts import layout, registry
@@ -55,11 +55,7 @@ def render_test_block(tag_name: str, content: str) -> RenderResult:
     item = ContentItem(
         source_path=Path("test.md"),
         metadata={"layout": "default"},
-        blocks={"content": [ContentBlock(
-            tag_name=tag_name,
-            content=content,
-            attrs_str=""
-        )]}
+        content=content
     )
     
     # Use render_content to handle the FastHTML content
@@ -68,11 +64,16 @@ def render_test_block(tag_name: str, content: str) -> RenderResult:
     
     # Check if the result contains an error message
     if isinstance(result, str):
+        # Check for FastHTML error
         if 'class="fasthtml-error"' in result:
-            # Extract error message
-            error_msg = re.search(r'ERROR: ([^<]+)', result)
+            error_msg = re.search(r'ERROR: [^<]*: ([^<]+)', result)
             if error_msg:
-                return RenderResult(error=error_msg.group(1))
+                return RenderResult(content=result, error=error_msg.group(1))
+        # Check for general error
+        elif 'class="error"' in result:
+            error_msg = re.search(r'Error: ([^<]+)', result)
+            if error_msg:
+                return RenderResult(content=result, error=error_msg.group(1))
         return RenderResult(content=result)
     
     # If the result is a RenderResult, return it as is

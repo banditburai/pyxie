@@ -16,8 +16,7 @@
 
 from .pyxie import Pyxie
 from .layouts import layout
-from .types import (
-    ContentBlock,
+from .types import (    
     ContentItem,    
     Metadata,
     PathLike,
@@ -56,8 +55,7 @@ __all__ = [
     # Decorators
     "layout",
     
-    # Types
-    "ContentBlock",
+    # Types    
     "ContentItem",
     "Metadata",
     "PathLike",

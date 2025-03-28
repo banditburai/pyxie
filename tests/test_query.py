@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pyxie.query import Query, QueryResult
-from pyxie.types import ContentItem, ContentBlock
+from pyxie.types import ContentItem
 
 # Type definitions for filter arguments
 class FilterKwargs(TypedDict, total=False):
@@ -22,11 +22,7 @@ def create_content_item(slug: str, metadata: Dict[str, Any]) -> ContentItem:
     return ContentItem(
         source_path=Path(f"{slug}.md"),
         metadata=metadata,
-        blocks={"content": [ContentBlock(
-            tag_name="markdown",
-            content="# Test Content",
-            attrs_str="",            
-        )]}
+        content="<content># Test Content</content>"
     )
 
 # Test fixtures

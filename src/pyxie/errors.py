@@ -14,9 +14,19 @@
 
 """Core exceptions for Pyxie."""
 
+import logging
+from pathlib import Path
 from typing import Optional, TypeVar, Union
 
 T = TypeVar('T')
+
+def log(logger_instance: logging.Logger, module: str, level: str, operation: str, message: str, file_path: Optional[Path] = None) -> None:
+    """Log message with standardized format."""
+    if file_path:
+        file_info = f" in file {file_path}"
+    else:
+        file_info = ""
+    getattr(logger_instance, level)(f"[{module}] {operation}: {message}{file_info}")
 
 def format_error_html(error: Union[Exception, str], context: Optional[str] = None) -> str:
     """Format an error message as HTML for display.

@@ -24,9 +24,10 @@ from .constants import DEFAULT_METADATA
 from .types import ContentItem, PathLike
 from .query import Query, QueryResult
 from .cache import Cache
-from .utilities import log, load_content_file, resolve_default_layout
+from .utilities import load_content_file, resolve_default_layout
 from .collection import Collection
 from .layouts import registry
+from .errors import log
 
 logger = logging.getLogger(__name__)
 

@@ -28,7 +28,7 @@ from dataclasses import dataclass
 import math
 
 from .types import ContentItem
-from .utilities import log
+from .errors import log
 
 logger = logging.getLogger(__name__)
 

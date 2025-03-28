@@ -7,7 +7,8 @@ import pytest
 from starlette.responses import Response
 
 from pyxie import Pyxie
-from pyxie.types import ContentItem, ContentBlock
+from pyxie.types import ContentItem
+from pyxie.parser import NestedContentToken
 
 
 @pytest.fixture
@@ -36,11 +37,7 @@ def pyxie_instance(test_md_file):
             "tags": ["test"],
             "date": "2025-03-14"
         },
-        blocks={"content": [ContentBlock(
-            tag_name="markdown",
-            content="# Test Content\n\nThis is test markdown content.",
-            attrs_str="",            
-        )]}
+        content="# Test Content\n\nThis is test markdown content."
     )
     
     # Create a mock for the get_item method
@@ -51,11 +48,7 @@ def pyxie_instance(test_md_file):
             no_source_item = ContentItem(
                 source_path=None,
                 metadata={"title": "No Source"},
-                blocks={"content": [ContentBlock(
-                    tag_name="markdown",
-                    content="No source content",
-                    attrs_str="",                    
-                )]}
+                content="No source content"
             )
             return no_source_item, None
         else:

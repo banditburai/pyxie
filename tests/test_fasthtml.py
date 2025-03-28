@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from pyxie.types import ContentBlock, ContentItem
+from pyxie.types import ContentItem
 from pyxie.renderer import render_content
 from pyxie.layouts import layout, registry
 from fastcore.xml import FT, Div, H1, H2, P
@@ -24,11 +24,7 @@ def create_test_item(content: str) -> ContentItem:
     return ContentItem(
         source_path=Path("test.md"),
         metadata={"layout": "default"},
-        blocks={"content": [ContentBlock(
-            tag_name="content",
-            content=content,
-            attrs_str=""
-        )]}
+        content=content
     )
 
 def test_simple_component():
@@ -81,7 +77,9 @@ console.log("Hello World");
 """
     item = create_test_item(content)
     html = render_content(item)
-    assert '<script>console.log("Hello World");</script>' in html
+    assert 'console.log("Hello World");' in html
+    assert html.strip().startswith('<script>')
+    assert html.strip().endswith('</script>')
 
 def test_multiple_blocks():
     """Test that multiple blocks are properly rendered."""
@@ -99,7 +97,8 @@ This is markdown content.
     item = create_test_item(content)
     html = render_content(item)
     assert '<div>First block</div>' in html
-    assert '<script>console.log(\'Second block\');</script>' in html
+    assert "console.log('Second block');" in html
+    assert '<script>' in html and '</script>' in html
     assert '<p>This is markdown content.</p>' in html
 
 def test_mixed_content():
@@ -122,7 +121,8 @@ show(Div("More FastHTML content"))
     item = create_test_item(content)
     html = render_content(item)
     assert '<div>FastHTML content</div>' in html
-    assert '<script>console.log("Script content");</script>' in html
+    assert 'console.log("Script content");' in html
+    assert '<script>' in html and '</script>' in html
     assert '<p>Regular markdown content.</p>' in html
     assert '<div>More FastHTML content</div>' in html 
 
@@ -248,88 +248,55 @@ show(ComplexComponent())
 
 def test_render_block_integration():
     """Test integration between render_content and FastHTML."""
-    from pyxie.types import ContentBlock, ContentItem
-    from pathlib import Path
-    
-    # Test direct FastHTML rendering
     content = """
 <ft>
 def TestComponent():
-    return Div("Direct render test", cls="test")
+    return Div(
+        H1("Test Title"),
+        P("Test content"),
+        cls="test-component"
+    )
+
 show(TestComponent())
 </ft>
 """
-    item = ContentItem(
-        source_path=Path("test.md"),
-        metadata={"layout": "default"},
-        blocks={"content": [ContentBlock(
-            tag_name="content",
-            content=content,
-            attrs_str=""
-        )]}
-    )
+    item = create_test_item(content)
     html = render_content(item)
-    assert '<div class="test">Direct render test</div>' in html
-    
-    # Test with markdown mixed content
-    mixed_content = """
-# Markdown Header
-
-<ft>
-show(Div("FastHTML in markdown"))
-</ft>
-
-More markdown content
-"""
-    item = ContentItem(
-        source_path=Path("test.md"),
-        metadata={"layout": "default"},
-        blocks={"content": [ContentBlock(
-            tag_name="content",
-            content=mixed_content,
-            attrs_str=""
-        )]}
-    )
-    html = render_content(item)
-    assert '<h1 id="markdown-header">Markdown Header</h1>' in html
-    assert '<div>FastHTML in markdown</div>' in html
-    assert '<p>More markdown content</p>' in html
+    assert '<div class="test-component">' in html
+    assert '<h1>Test Title</h1>' in html
+    assert '<p>Test content</p>' in html
 
 def test_comprehensive_error_handling():
     """Test comprehensive error handling in FastHTML."""
-    # Test invalid Python syntax
-    content = """
-def broken_function():
-    invalid syntax here
-    return "Broken"
-show(broken_function())
+    # Test syntax error
+    content = """def broken_function():
+return "This will never execute"
 """
     result = render_fasthtml(content)
     assert not result.success
-    assert "invalid syntax" in result.error.lower()
+    assert "expected an indented block" in result.error.lower()
     
     # Test runtime error
-    content = """
-def func():
-    raise ValueError("Test error")
-show(func())
+    content = """def div_by_zero():
+    x = 1/0
+    return x
+show(div_by_zero())
 """
     result = render_fasthtml(content)
     assert not result.success
-    assert "test error" in result.error.lower()
+    assert "division by zero" in result.error.lower()
     
-    # Test invalid component usage
-    content = """
-show(NonexistentComponent())
+    # Test undefined component
+    content = """show(NonexistentComponent())
 """
     result = render_fasthtml(content)
     assert not result.success
     assert "nonexistentcomponent" in result.error.lower()
     
-    # Test invalid show() usage
-    content = """
-show(1, 2, 3, invalid=True)  # Invalid keyword argument
+    # Test invalid show() call
+    content = """show(Div("Test"), invalid="param")
 """
     result = render_fasthtml(content)
     assert not result.success
-    assert "invalid" in result.error.lower() 
+    assert "unexpected keyword argument" in result.error.lower()
+

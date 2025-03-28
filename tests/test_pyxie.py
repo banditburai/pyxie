@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from pyxie.pyxie import Pyxie
 from pyxie.layouts import registry
-from pyxie.types import ContentBlock
+from pyxie.types import ContentItem
 
 @dataclass
 class ContentHelper:

@@ -3,9 +3,10 @@
 import pytest
 from mistletoe import Document
 from pyxie.renderer import render_content
-from pyxie.types import ContentBlock, ContentItem
+from pyxie.types import ContentItem
 from pyxie.layouts import layout, registry
 from pyxie.fasthtml import render_fasthtml
+from pyxie.parser import NestedContentToken
 from fastcore.xml import FT, Div
 from pathlib import Path
 import re
@@ -31,11 +32,7 @@ def create_test_item(content: str) -> ContentItem:
     return ContentItem(
         source_path=Path("test.md"),
         metadata={"layout": "default"},
-        blocks={"content": [ContentBlock(
-            tag_name="content",
-            content=content,
-            attrs_str="",            
-        )]}
+        content=content
     )
 
 def test_fasthtml_in_code_blocks():

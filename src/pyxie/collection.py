@@ -19,8 +19,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Iterator
 
 from .types import ContentItem, PathLike
-from .utilities import log, load_content_file, resolve_default_layout
-from .errors import CollectionError
+from .utilities import load_content_file, resolve_default_layout
+from .errors import CollectionError, log
 
 logger = logging.getLogger(__name__)
 

@@ -17,7 +17,7 @@
 import re
 import logging
 from typing import Dict, Optional, Any
-from .utilities import log
+from .errors import log
 
 logger = logging.getLogger(__name__)
 

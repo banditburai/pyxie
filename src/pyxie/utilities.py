@@ -26,29 +26,16 @@ import importlib.util
 import os
 import re
 from dataclasses import dataclass
+from .types import ContentItem, RenderResult
 
-# Import constants from constants module to avoid circular imports
 from .constants import DEFAULT_METADATA
+from .errors import log
 
 logger = logging.getLogger(__name__)
-
-@dataclass
-class RenderResult:
-    """Result of rendering content."""
-    content: str = ""
-    error: Optional[str] = None
 
 def format_error_html(error_type: str, message: str) -> str:
     """Format an error message as HTML."""
     return f'<div class="fasthtml-error">ERROR: {error_type.upper()}: {message}</div>'
-
-def log(logger_instance: logging.Logger, module: str, level: str, operation: str, message: str, file_path: Optional[Path] = None) -> None:
-    """Log message with standardized format."""
-    if file_path:
-        file_info = f" in file {file_path}"
-    else:
-        file_info = ""
-    getattr(logger_instance, level)(f"[{module}] {operation}: {message}{file_info}")
 
 def safe_html_escape(text: Optional[str], quote: bool = True) -> str:
     """Escape HTML text, handling None values."""
@@ -203,42 +190,29 @@ def load_content_file(
 ) -> Optional["ContentItem"]:
     """Load a content file and create a ContentItem.
     
-    This function handles:
-    1. Loading raw file content
-    2. Parsing frontmatter
-    3. Merging metadata
+    Args:
+        file_path: Path to the content file
+        default_metadata: Optional metadata to merge with file metadata
+        logger_instance: Optional logger for debugging
+        
+    Returns:
+        ContentItem if successful, None if loading fails
     """
     try:
         from .parser import parse_frontmatter
         from .types import ContentItem
         from .constants import DEFAULT_METADATA
         
-        # Get raw content and parse frontmatter
+        # Load and parse content
         content = file_path.read_text()
-        if logger_instance:
-            log(logger_instance, "ContentLoader", "info", "load", f"Loading content from {file_path}")
-            
-        metadata, content_without_frontmatter = parse_frontmatter(content)
-        if logger_instance:
-            log(logger_instance, "ContentLoader", "info", "frontmatter", f"Parsed metadata: {metadata}")
+        metadata, content = parse_frontmatter(content)
                 
-        merged_metadata = DEFAULT_METADATA.copy()
-        if logger_instance:
-            log(logger_instance, "ContentLoader", "info", "metadata", f"Starting with system defaults: {merged_metadata}")
-            
-        if default_metadata:
-            merged_metadata.update(default_metadata)
-            if logger_instance:
-                log(logger_instance, "ContentLoader", "info", "metadata", f"After collection defaults: {merged_metadata}")
-                
-        merged_metadata.update(metadata)
-        if logger_instance:
-            log(logger_instance, "ContentLoader", "info", "metadata", f"Final merged metadata: {merged_metadata}")
+        merged_metadata = DEFAULT_METADATA | (default_metadata or {}) | metadata
         
         return ContentItem(
             source_path=file_path,
             metadata=merged_metadata,
-            content=content_without_frontmatter
+            content=content
         )
     except Exception as e:
         if logger_instance:
@@ -399,11 +373,34 @@ def safe_import(
 
 def parse_html_fragment(content_html: str) -> Any:
     """Parse HTML fragment, wrapping in div if needed."""
-    from lxml import html
+    from lxml import html, etree
+    
+    # Create a custom parser that preserves custom tags
+    parser = etree.HTMLParser(recover=True)
+    etree.set_default_parser(parser)
+    
     try:
-        return html.fragment_fromstring(content_html)
+        # First try to parse as-is
+        fragment = html.fragment_fromstring(content_html, parser=parser)
+        
+        # If we got a div and it's not what we wanted, extract its children
+        if fragment.tag == 'div' and not content_html.strip().startswith('<div'):
+            children = list(fragment)
+            if len(children) == 1:
+                return children[0]
+            return fragment
+            
+        return fragment
     except Exception:
-        return html.fragment_fromstring(f"<div>{content_html}</div>")
+        # If that fails, try wrapping in a div
+        fragment = html.fragment_fromstring(f"<div>{content_html}</div>", parser=parser)
+        
+        # If we only have one child and it's not a div, return it
+        children = list(fragment)
+        if len(children) == 1 and not content_html.strip().startswith('<div'):
+            return children[0]
+            
+        return fragment
 
 def build_pagination_urls(
     base_url: str,
@@ -439,4 +436,3 @@ def build_pagination_urls(
         "pages": {p: build_url(p) for p in pagination.page_range()}
     } 
 
-from .types import ContentItem
