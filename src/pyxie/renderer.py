@@ -121,6 +121,25 @@ class NestedRenderer(HtmlRenderer):
             log(logger, "Renderer", "error", "script", f"Failed to render script: {e}")
             return f'<div class="error">Error: {e}</div>'
 
+    def render_image(self, token):
+        """Render an image token, handling pyxie: URLs."""
+        src = token.src
+        if src.startswith('pyxie:'):
+            # Parse pyxie: URL format - pyxie:category/width/height
+            parts = src[6:].split('/')  # Remove 'pyxie:' prefix and split
+            if len(parts) >= 3:
+                category = parts[0]
+                width = parts[1]
+                height = parts[2]
+                # Use picsum.photos for placeholder images
+                src = f"https://picsum.photos/seed/{category}/{width}/{height}"
+        
+        template = '<img src="{}" alt="{}"{} />'
+        title = f' title="{token.title}"' if token.title else ''
+        # Get alt text from token.children if available, otherwise use empty string
+        alt = token.children[0].content if token.children else ""
+        return template.format(src, alt, title)
+
 def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """Handle caching and layout resolution in one step."""
     collection = item.collection or "content"
