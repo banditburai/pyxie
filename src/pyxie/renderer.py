@@ -171,29 +171,22 @@ class PyxieRenderer(HTMLRenderer):
         return f'<p>{inner}</p>' if inner.strip() else ''
 
     def render_block_code(self, token) -> str:
-        """Render a block code element."""
-        # Get language if specified
+        """Renders a block code element, preserving whitespace and escaping HTML."""        
         lang = getattr(token, 'language', '')
-        lang_class = f' class="language-{lang}"' if lang else ''
-        
-        # Process lines to preserve intentional blank lines
-        lines = token.content.splitlines()
-        processed_lines = []
-        for line in lines:
-            if line.strip():
-                # Add a span to force tokens to stay on same line
-                processed_lines.append(f'<span style="white-space:pre">{html.escape(line)}</span>')
-            else:
-                # Keep empty lines as markers
-                processed_lines.append('')
-            
-        # Join with explicit newlines
-        code = '\n'.join(processed_lines)
-        
-        return f'<pre><code{lang_class}>{code}</code></pre>'
+        lang_class = f' class="language-{lang}"' if lang else ''        
+        if hasattr(token, 'children') and token.children:            
+            code_content = token.children[0].content
+        elif hasattr(token, 'content'):            
+            code_content = token.content
+        else:
+            code_content = ''
+
+        # Escape HTML - this preserves whitespace while preventing XSS
+        escaped_code = html.escape(code_content)        
+        return f'<pre><code{lang_class}>{escaped_code}</code></pre>'
 
     def render_fenced_code(self, token) -> str:
-        """Render a fenced code block."""
+        """Renders a fenced code block by delegating to render_block_code."""
         return self.render_block_code(token)
 
     # --- Helper Methods ---
