@@ -178,8 +178,9 @@ class PyxieRenderer(HTMLRenderer):
         # Get content from token, defaulting to empty string
         code_content = getattr(token.children[0] if token.children else token, 'content', '')
         
-        # Only strip trailing newlines, preserve exact internal structure
-        code = code_content.rstrip('\n')
+        # Replace empty lines with a non-breaking space to prevent collapsing
+        lines = code_content.splitlines()
+        code = '\n'.join(line if line.strip() else '\u00A0' for line in lines)
         code = html.escape(code)
         
         return f'<pre><code{lang_class}>{code}</code></pre>'
