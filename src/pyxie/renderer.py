@@ -186,33 +186,17 @@ class PyxieRenderer(HTMLRenderer):
     def render_block_code(self, token: BlockToken) -> str:
         """
         Renders a fenced code block (BlockCode).
-        
-        Instead of trying to fix newlines after the fact, we:
-        1. Get the original lines from the token
-        2. Preserve the exact formatting from the markdown source
-        3. Only escape HTML characters
+        Preserves exact formatting from the markdown source.
         """
         # Get language if specified
         language = getattr(token, 'language', '')
         lang_class = f' class="language-{language}"' if language else ''
         
-        # Access the original source lines if available
-        if hasattr(token, '_lines_cache'):
-            # These are the raw lines between the fences, preserving original formatting
-            code_lines = token._lines_cache
-        else:
-            # Fallback to content from RawText child if _lines_cache not available
-            if not token.children or len(token.children) != 1 or not isinstance(token.children[0], RawText):
-                logger.warning(f"BlockCode token has unexpected structure: {token.children}")
-                return f'<pre><code{lang_class}></code></pre>'
-            code_lines = token.children[0].content.splitlines()
-
-        # Join lines with newlines to preserve exact formatting
-        # Don't strip or normalize - preserve exactly as in source
-        code_content = '\n'.join(code_lines)
+        # Get the raw content from the token
+        code = token.content
         
-        # Only escape HTML special characters
-        escaped_code = html.escape(code_content)
+        # Escape HTML special characters
+        escaped_code = html.escape(code)
         
         # Return the code block
         return f'<pre><code{lang_class}>{escaped_code}</code></pre>'
@@ -251,7 +235,7 @@ def render_content(
 
             with PyxieRenderer(*custom_tokens_for_parsing) as renderer:
                 try:                    
-                    # Pass raw content directly to Document
+                    # Pass raw content string directly to Document
                     doc = Document(item.content)
                     rendered_fragment = renderer.render(doc)
                     log(logger, module_name, "debug", operation_name, "Successfully rendered Markdown to fragment.", file_path=file_path)
