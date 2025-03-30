@@ -29,6 +29,8 @@ from typing import Dict, List, Any, Tuple, Optional, Type, ClassVar, Iterator
 
 # Mistletoe imports
 from mistletoe import Document
+from mistletoe import block_tokenizer  # Access the core tokenizer
+from mistletoe import block_token      # Access the default list of block tokens (_token_types)
 from mistletoe.block_token import BlockToken
 from mistletoe.block_tokenizer import FileWrapper
 
@@ -74,15 +76,6 @@ def _parse_attrs_str(attrs_str: Optional[str]) -> Dict[str, Any]:
         attrs[key] = value
     return attrs
 
-def _dedent_lines(lines: List[str]) -> List[str]:
-    """Remove common minimum indentation from non-empty lines."""
-    if not lines: return []
-    meaningful_lines = [line for line in lines if line.strip()]
-    if not meaningful_lines: return ['' for _ in lines] # Preserve line count if all blank
-    min_indent = min(len(line) - len(line.lstrip(' ')) for line in meaningful_lines)
-    if min_indent == 0: return lines
-    return [(line[min_indent:] if line.strip() else '') for line in lines]
-
 # --- Frontmatter Parsing ---
 
 def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
@@ -123,7 +116,6 @@ class BaseCustomMistletoeBlock(BlockToken):
         r'^\s*<([a-zA-Z][a-zA-Z0-9\-_]*)' # 1: Tag name
         r'(?:\s+([^>]*?))?'              # 2: Attributes (non-greedy)
         r'\s*(/?)>'                      # 3: Optional self-closing slash and closing >
-        #  REMOVE \s*$ - Allow anything after the opening tag's >
         , re.VERBOSE | re.IGNORECASE
     )
     _CLOSE_TAG_PATTERN: ClassVar[re.Pattern] = re.compile(
@@ -134,30 +126,21 @@ class BaseCustomMistletoeBlock(BlockToken):
         """Initialize token from data returned by read()."""
         self.tag_name: str = result.get('tag_name', '')
         self.attrs: Dict[str, Any] = result.get('attrs', {})
-        self.content: str = result.get('content', '') # Raw inner content string
+        self.content: str = result.get('content', '')
         self.is_self_closing: bool = result.get('is_self_closing', False)
-        self._children = []
-        self._parent = None
-
-        # Eagerly parse inner content using Document() if needed
-        if getattr(self.__class__, 'parse_inner', False) and self.content:
-            inner_lines_raw = self.content.splitlines()
-            inner_lines_dedented = _dedent_lines(inner_lines_raw)
-            # Don't skip empty lines at the start or end, as they might be significant
-            inner_lines_final = inner_lines_dedented
-
-            if inner_lines_final:
-                inner_doc = Document(inner_lines_final)
-                self._children = inner_doc.children
-                for child in self._children: child._parent = self
-
-        logger.debug("[%s] Initialized: tag=%s, attrs=%s, children=%d",
-                    self.__class__.__name__, self.tag_name, self.attrs, len(self._children))
+        self._children = []        
+        
+        if getattr(self.__class__, 'parse_inner', False) and self.content:            
+            # Split into lines while preserving newlines and pass directly to Mistletoe's tokenizer
+            inner_lines = self.content.splitlines(keepends=True)
+            self._children = list(block_tokenizer.tokenize(inner_lines, block_token._token_types))
+            
+            logger.debug("[%s] Initialized: tag=%s, attrs=%s, children=%d",
+                         self.__class__.__name__, self.tag_name, self.attrs, len(self._children))
 
     @property
     def children(self):
         """Provides access to parsed children tokens."""
-        # No lazy parsing needed, parsing happens in __init__
         return self._children
 
     @classmethod
@@ -165,8 +148,7 @@ class BaseCustomMistletoeBlock(BlockToken):
         """Check if line matches the opening tag pattern AND specific tag rules."""
         match = cls._OPEN_TAG_PATTERN.match(line)
         if not match: return False
-        tag_name = match.group(1).lower()
-        # logger.debug("[%s] Checking start match for tag: %s", cls.__name__, tag_name)
+        tag_name = match.group(1).lower()        
         return cls._is_tag_match(tag_name)
 
     @classmethod
@@ -218,8 +200,6 @@ class BaseCustomMistletoeBlock(BlockToken):
         # --- Multi-line search (keep previous robust loop) ---
         nesting_level = 1
         found_closing_tag = False
-        content_lines_raw = [rest_of_line] # Start content with rest of first line
-
         while True:
             try:
                 next_line = lines.peek()
@@ -229,9 +209,7 @@ class BaseCustomMistletoeBlock(BlockToken):
                 if close_match and close_match.group(1).lower() == tag_name:
                     nesting_level -= 1
                     if nesting_level == 0:
-                        next(lines)
-                        found_closing_tag = True
-                        break
+                        next(lines); found_closing_tag = True; break
 
                 consumed_line = next(lines)
                 content_lines_raw.append(consumed_line)
