@@ -12,369 +12,270 @@
 # See the License for the specific language governing permissions and
 # limitations under the License. 
 
-"""Markdown parser with support for custom tokens and nested content."""
+"""
+Custom Mistletoe parser definitions.
+
+This module defines custom block tokens that integrate with
+Mistletoe's parsing mechanism via the `read()` pattern for blocks.
+It also includes frontmatter parsing. Slot identification happens
+post-rendering based on convention (non-standard/raw tags).
+"""
 
 import re
-from typing import Dict, List, Set, Any, Tuple, Union, Iterator, Type, ClassVar, Optional
-from mistletoe import Document
-from mistletoe.block_token import BlockToken, add_token
 import yaml
-from dataclasses import dataclass
-from .constants import SELF_CLOSING_TAGS
+import logging
+import html
+from typing import Dict, List, Any, Tuple, Optional, Type, ClassVar, Iterator
 
-# Reserved tag names that should not be treated as nested content
-RESERVED_TAGS = {
-    'script', 'fasthtml', 'ft', 'html', 'head', 'body', 'div', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'ul', 'ol', 'li', 'a', 'img', 'table', 'tr', 'td', 'th', 'thead', 'tbody', 'form', 'input', 'button',
-    'select', 'option', 'textarea', 'label', 'meta', 'link', 'style', 'title', 'header', 'footer', 'nav',
-    'main', 'article', 'section', 'aside', 'figure', 'figcaption', 'blockquote', 'pre', 'code', 'em', 'strong',
-    'i', 'b', 'u', 'mark', 'small', 'sub', 'sup', 'del', 'ins', 'q', 'cite', 'abbr', 'address', 'time',
-    'progress', 'meter', 'canvas', 'svg', 'video', 'audio', 'source', 'track', 'embed', 'object', 'param',
-    'map', 'area', 'col', 'colgroup', 'caption', 'tfoot', 'fieldset', 'legend', 'datalist', 'optgroup',
-    'keygen', 'output', 'details', 'summary', 'menuitem', 'menu', 'dialog', 'slot', 'template', 'portal'
+# Mistletoe imports
+from mistletoe import Document
+from mistletoe.block_token import BlockToken
+from mistletoe.block_tokenizer import FileWrapper
+
+logger = logging.getLogger(__name__)
+
+# --- Constants ---
+
+RAW_BLOCK_TAGS: set[str] = {'script', 'style', 'pre', 'fasthtml', 'ft'}
+
+VOID_ELEMENTS: set[str] = {
+    'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
+    'link', 'meta', 'param', 'source', 'track', 'wbr'
 }
 
-# Frontmatter pattern - matches only the frontmatter section
-FRONTMATTER_PATTERN = re.compile(r'^\s*---\s*\n(.*?)\n\s*---\s*\n', re.DOTALL)
+ATTR_PATTERN = re.compile(r"""
+    (?P<key>[^\s"'=<>`/]+)
+    (?:
+        \s*=\s*
+        (?P<value>
+            (?:"(?P<double>[^"]*)") | (?:'(?P<single>[^']*)') | (?P<unquoted>[^\s"'=<>`]+)
+        )
+    )?
+""", re.VERBOSE | re.IGNORECASE)
 
-class BaseToken(BlockToken):
-    """Base class for custom tokens with common functionality."""
-    
-    # Class variables that must be defined by subclasses
-    pattern: ClassVar[re.Pattern]
-    closing_pattern: ClassVar[re.Pattern]
-    parse_inner: ClassVar[bool] = False
-    priority: ClassVar[int] = 100
-    
-    def __init__(self, lines: List[str]):
-        self.lines = lines
-        self.line_number = 1
-        self.content = '\n'.join(lines[1:-1])
-        self.attrs = self._parse_attrs(lines[0])
-    
-    @classmethod
-    def start(cls, line: str) -> bool:
-        """Check if line starts this type of token."""
-        return bool(cls.pattern.match(line))
-    
-    def _parse_attrs(self, opening_line: str) -> Dict[str, Any]:
-        """Parse attributes from opening tag."""
-        if not (match := self.pattern.match(opening_line)):
-            raise ValueError(f"Invalid tag syntax at line {self.line_number}: {opening_line}")
-        return self._parse_attrs_str(match.group(1) or '')
-            
-    @staticmethod
-    def _parse_attrs_str(attrs_str: str) -> Dict[str, Any]:
-        """Parse a string of attributes into a dictionary."""
-        if not attrs_str:
-            return {}
-            
-        parts = []
-        current = []
-        in_quotes = False
-        quote_char = None
-        
-        for char in attrs_str:
-            if char in '"\'':
-                if not in_quotes:
-                    in_quotes = True
-                    quote_char = char
-                elif char == quote_char:
-                    in_quotes = False
-                    quote_char = None
-                current.append(char)
-            elif char.isspace() and not in_quotes:
-                if current:
-                    parts.append(''.join(current))
-                    current = []
-            else:
-                current.append(char)
-                
-        if current:
-            parts.append(''.join(current))
-            
-        return {
-            key.strip(): value.strip('"\'') if '=' in attr else True
-            for attr in parts
-            for key, value in [attr.split('=', 1)]
-        }
+FRONTMATTER_PATTERN = re.compile(
+    r'\A\s*---\s*\n(?P<frontmatter>.*?)\n\s*---\s*\n(?P<content>.*)', re.DOTALL
+)
 
-class FastHTMLToken(BaseToken):
-    """Token for FastHTML blocks."""
-    pattern = re.compile(r'^<(?:ft|fasthtml)(?:\s+([^>]*))?>')
-    closing_pattern = re.compile(r'^\s*</(?:ft|fasthtml)>\s*$')
-    parse_inner = False
-    priority = 100
+# --- Utility Functions ---
 
-class ScriptToken(BaseToken):
-    """Token for script blocks."""
-    pattern = re.compile(r'^<script(?:\s+([^>]*))?>')
-    closing_pattern = re.compile(r'^\s*</script>\s*$')
-    parse_inner = False
-    priority = 100
+def _parse_attrs_str(attrs_str: Optional[str]) -> Dict[str, Any]:
+    """Parse attribute string into a dictionary using ATTR_PATTERN."""
+    attrs = {}
+    if not attrs_str: return attrs
+    for match in ATTR_PATTERN.finditer(attrs_str):
+        key = match.group('key')
+        val_double, val_single, val_unquoted = match.group("double", "single", "unquoted")
+        value = True # Default for boolean attribute
+        if val_double is not None: value = val_double
+        elif val_single is not None: value = val_single
+        elif val_unquoted is not None: value = val_unquoted
+        elif match.group("value") is not None: value = "" # Value exists but is empty
+        attrs[key] = value
+    return attrs
 
-class NestedContentToken(BaseToken):
-    """Token for handling nested content blocks with markdown support."""
-    
-    pattern = re.compile(r'^<([a-zA-Z][a-zA-Z0-9-_]*)(.*?)(/?)>')
-    closing_pattern = re.compile(r'^</([a-zA-Z][a-zA-Z0-9-_]*)>')
-    
-    parse_inner = True
-    priority = 100
+def _dedent_lines(lines: List[str]) -> List[str]:
+    """Remove common minimum indentation from non-empty lines."""
+    if not lines: return []
+    meaningful_lines = [line for line in lines if line.strip()]
+    if not meaningful_lines: return ['' for _ in lines] # Preserve line count if all blank
+    min_indent = min(len(line) - len(line.lstrip(' ')) for line in meaningful_lines)
+    if min_indent == 0: return lines
+    return [(line[min_indent:] if line.strip() else '') for line in lines]
 
-    @staticmethod
-    def start(line: str) -> bool:
-        """Check if a line starts a valid nested content block."""
-        return bool(NestedContentToken.pattern.match(line))
-
-    def __init__(self, lines: List[str]):
-        self.lines = lines
-        self.line_number = 1
-        
-        # Parse opening tag
-        if not (match := self.pattern.match(lines[0])):
-            raise ValueError(f"Invalid tag syntax at line {self.line_number}: {lines[0]}")
-            
-        self.tag_name = match.group(1)
-        self.attrs = self._parse_attrs_str(match.group(2) or '')
-        self.is_self_closing = bool(match.group(3)) or lines[0].rstrip().endswith('/>')
-        
-        # For self-closing tags, we don't need to parse content
-        if self.tag_name in SELF_CLOSING_TAGS or self.is_self_closing:
-            self.content = ''
-            self.children = []
-            return
-            
-        # For custom content blocks, parse the content as markdown
-        content_lines = lines[1:-1] if len(lines) > 2 else []
-        if content_lines:
-            # Find the minimum indentation level (excluding empty lines)
-            min_indent = min(
-                len(line) - len(line.lstrip())
-                for line in content_lines
-                if line.strip()
-            )
-            # Strip the common indentation from all lines
-            content_lines = [line[min_indent:] for line in content_lines]
-        
-        self.content = '\n'.join(content_lines)
-        self.children = self._parse_children(content_lines)
-
-    def _parse_children(self, content_lines: List[str]) -> List[Any]:
-        """Parse nested content blocks and markdown content."""
-        children = []
-        current_block = []
-        in_nested_block = False
-        nested_level = 0
-        current_tag = None
-        
-        for line in content_lines:
-            if not in_nested_block:
-                # Check for start of nested block
-                if match := self.pattern.match(line.strip()):
-                    tag_name = match.group(1)
-                    is_self_closing = bool(match.group(3)) or line.rstrip().endswith('/>')
-                    
-                    # Process any accumulated content as markdown
-                    if current_block:
-                        children.extend(Document('\n'.join(current_block)).children)
-                        current_block = []
-                    
-                    # For self-closing tags, create a token and continue
-                    if tag_name in SELF_CLOSING_TAGS or is_self_closing:
-                        children.append(NestedContentToken([line.strip()]))
-                        continue
-                    
-                    # For custom blocks, start collecting nested content
-                    in_nested_block = True
-                    nested_level = 1
-                    current_tag = tag_name
-                    current_block = [line]
-                    continue
-                current_block.append(line)
-            else:
-                # Check for nested levels
-                if match := self.pattern.match(line.strip()):
-                    if match.group(1) == current_tag:
-                        nested_level += 1
-                elif match := self.closing_pattern.match(line.strip()):
-                    if match.group(1) == current_tag:
-                        nested_level -= 1
-                        if nested_level == 0:
-                            current_block.append(line)
-                            children.append(NestedContentToken(current_block))
-                            current_block = []
-                            in_nested_block = False
-                            continue
-                current_block.append(line)
-        
-        # Process any remaining content as markdown
-        if current_block:
-            children.extend(Document('\n'.join(current_block)).children)
-            
-        return children
+# --- Frontmatter Parsing ---
 
 def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
-    """Parse YAML frontmatter from content."""
+    """Parses YAML frontmatter from the beginning of the content string."""
     if not content.strip().startswith('---'):
         return {}, content
-        
-    if match := FRONTMATTER_PATTERN.match(content):
-        frontmatter_text = match.group(1)
-        # Split content at the end of frontmatter section
-        _, remaining_content = content.split('\n---\n', 1)
-        try:
-            metadata = yaml.safe_load(frontmatter_text) or {}
-            if not isinstance(metadata, dict):
-                raise ValueError(f"Frontmatter must be a dictionary, got {type(metadata).__name__}")
-            return metadata, remaining_content
-        except Exception as e:
-            print(f"Warning: Failed to parse frontmatter: {e}")
-            return {}, content
-    
-    return {}, content
+    match = FRONTMATTER_PATTERN.match(content)
+    if not match:
+        if content.strip() == '---': return {}, '' # Handle '---' only
+        logger.debug("No frontmatter block found despite '---' prefix.")
+        return {}, content
 
-class BlockTokenizer:
-    """Handles tokenization of content blocks."""
-    
-    def __init__(self):
-        self.code_fence_pattern = re.compile(r'^```\w*\s*$')
-    
-    def tokenize(self, content: Union[str, List[str]], 
-                token_types: List[Type[BlockToken]]) -> Iterator[BlockToken]:
-        """Tokenize content into blocks."""
-        lines = content.splitlines() if isinstance(content, str) else content
-        buffer = []
-        line_iter = iter(lines)
-        current_line = 1
-        in_code_block = False
-        
-        try:
-            while True:
-                line = next(line_iter)
-                
-                # Handle code blocks
-                if self._is_code_block(line):
-                    in_code_block = not in_code_block
-                    buffer.append(line)
-                    current_line += 1
-                    continue
-                
-                if in_code_block:
-                    buffer.append(line)
-                    current_line += 1
-                    continue
-                
-                # Try to create a token
-                if token := self._try_create_token(line, token_types, line_iter, current_line):
-                    yield from self._yield_buffer(buffer, current_line)
-                    yield token
-                    current_line += 1
-                    continue
-                
-                buffer.append(line)
-                current_line += 1
-                
-        except StopIteration:
-            pass
-        
-        yield from self._yield_buffer(buffer, current_line)
-    
-    def _is_code_block(self, line: str) -> bool:
-        """Check if line is a code block marker."""
-        return bool(self.code_fence_pattern.match(line))
-    
-    def _yield_buffer(self, buffer: List[str], current_line: int) -> Iterator[BlockToken]:
-        """Yield buffered content as markdown tokens."""
-        if buffer:
-            doc = Document('\n'.join(buffer))
-            for child in doc.children:
-                child.line_number = current_line - len(buffer)
-                yield child
-            buffer.clear()
-    
-    def _create_token(self, line: str, token_class: Type[BlockToken], 
-                 line_iter: Iterator[str], current_line: int) -> BlockToken:
-            """Create a token from the given line and token class."""
-            content_lines = self._collect_block_lines(line, token_class, line_iter)
-            token = token_class(content_lines)
-            token.line_number = current_line
-            return token
-    
-    def _try_create_token(self, line: str, token_types: List[Type[BlockToken]], 
-                         line_iter: Iterator[str], current_line: int) -> Optional[BlockToken]:
-        """Try to create a token from the current line."""                
-        # Check special tokens first (FastHTML and Script)
-        special_tokens = [FastHTMLToken, ScriptToken]
-        for token_class in special_tokens:
-            if token_class.start(line):
-                return self._create_token(line, token_class, line_iter, current_line)
-        
-        # Check other token types
-        for token_class in token_types:
-            if token_class in special_tokens or not token_class.start(line):
-                continue
-                
-            if token_class == NestedContentToken:
-                return self._handle_nested_content(line, token_class, line_iter, current_line)
-                
-            return self._create_token(line, token_class, line_iter, current_line)
-        
-        return None
-    
-    def _collect_block_lines(self, line: str, token_class: Type[BlockToken], 
-                           line_iter: Iterator[str]) -> List[str]:
-        """Collect lines for a block until its closing tag."""
-        content_lines = [line]
-        for next_line in line_iter:
-            content_lines.append(next_line)
-            if token_class.closing_pattern.match(next_line):
-                break
-        return content_lines
-    
-    def _handle_nested_content(self, line: str, token_class: Type[BlockToken],
-                             line_iter: Iterator[str], current_line: int) -> BlockToken:
-        """Handle nested content blocks with proper nesting level tracking."""
-        match = token_class.pattern.match(line)
-        tag_name = match.group(1)
-        is_self_closing = bool(match.group(3)) or line.rstrip().endswith('/>')
-        
-        # Skip special tags
-        if tag_name in ('fasthtml', 'ft', 'script'):
-            return None
-            
-        # Handle self-closing tags immediately
-        if is_self_closing or tag_name in SELF_CLOSING_TAGS:
-            token = token_class([line])
-            token.line_number = current_line
-            return token
-        
-        # Collect nested content
-        content_lines = [line]
-        nested_level = 1
-        
-        for next_line in line_iter:
-            content_lines.append(next_line)
-            if match := token_class.pattern.match(next_line.strip()):
-                if match.group(1) == tag_name and not (bool(match.group(3)) or next_line.rstrip().endswith('/>')):
-                    nested_level += 1
-            elif match := token_class.closing_pattern.match(next_line.strip()):
-                if match.group(1) == tag_name:
-                    nested_level -= 1
-                    if nested_level == 0:
-                        break
-        
-        if nested_level > 0:
-            raise ValueError(f"Unclosed tag '{tag_name}' at line {current_line}")
-            
-        return token_class(content_lines)
+    frontmatter_text = match.group('frontmatter')
+    remaining_content = match.group('content')
 
-def custom_tokenize_block(content: Union[str, List[str]], token_types: List[Type[BlockToken]]) -> Iterator[BlockToken]:
-    """Custom block tokenizer that prioritizes our content blocks."""
-    tokenizer = BlockTokenizer()
-    yield from tokenizer.tokenize(content, token_types)
+    if not frontmatter_text.strip(): return {}, remaining_content # Empty block
 
-# Register our custom tokens
-add_token(FastHTMLToken)
-add_token(ScriptToken)
-add_token(NestedContentToken)
+    try:
+        metadata = yaml.safe_load(frontmatter_text)
+        if metadata is None: metadata = {}
+        if not isinstance(metadata, dict):
+            logger.warning("Frontmatter is not a dictionary (type: %s). Treating as empty.", type(metadata).__name__)
+            return {}, content # Return original content on structure error
+        return metadata, remaining_content
+    except yaml.YAMLError as e:
+        logger.warning("Failed to parse YAML frontmatter: %s. Skipping.", e)
+        return {}, content # Return original on YAML error
+    except Exception as e:
+        logger.warning("Unexpected error parsing frontmatter: %s. Skipping.", e)
+        return {}, content
+
+# --- Custom Block Token Definitions ---
+
+class BaseCustomMistletoeBlock(BlockToken):
+    """Base class for custom block tokens using Mistletoe's read() pattern."""
+    parse_inner: ClassVar[bool]
+    _OPEN_TAG_PATTERN: ClassVar[re.Pattern] = re.compile(
+        r'^\s*<([a-zA-Z][a-zA-Z0-9\-_]*)' # 1: Tag name
+        r'(?:\s+([^>]*?))?'              # 2: Attributes (non-greedy)
+        r'\s*(/?)>'                      # 3: Optional self-closing slash and closing >
+        #  REMOVE \s*$ - Allow anything after the opening tag's >
+        , re.VERBOSE | re.IGNORECASE
+    )
+    _CLOSE_TAG_PATTERN: ClassVar[re.Pattern] = re.compile(
+        r'^\s*</([a-zA-Z][a-zA-Z0-9\-_]*)>\s*$', re.IGNORECASE
+    )
+
+    def __init__(self, result: Dict):
+        """Initialize token from data returned by read()."""
+        self.tag_name: str = result.get('tag_name', '')
+        self.attrs: Dict[str, Any] = result.get('attrs', {})
+        self.content: str = result.get('content', '') # Raw inner content string
+        self.is_self_closing: bool = result.get('is_self_closing', False)
+        self._children = []
+        self._parent = None
+
+        # Eagerly parse inner content using Document() if needed
+        if getattr(self.__class__, 'parse_inner', False) and self.content:
+            inner_lines_raw = self.content.splitlines()
+            inner_lines_dedented = _dedent_lines(inner_lines_raw)
+            # Don't skip empty lines at the start or end, as they might be significant
+            inner_lines_final = inner_lines_dedented
+
+            if inner_lines_final:
+                inner_doc = Document(inner_lines_final)
+                self._children = inner_doc.children
+                for child in self._children: child._parent = self
+
+        logger.debug("[%s] Initialized: tag=%s, attrs=%s, children=%d",
+                    self.__class__.__name__, self.tag_name, self.attrs, len(self._children))
+
+    @property
+    def children(self):
+        """Provides access to parsed children tokens."""
+        # No lazy parsing needed, parsing happens in __init__
+        return self._children
+
+    @classmethod
+    def start(cls, line: str) -> bool:
+        """Check if line matches the opening tag pattern AND specific tag rules."""
+        match = cls._OPEN_TAG_PATTERN.match(line)
+        if not match: return False
+        tag_name = match.group(1).lower()
+        # logger.debug("[%s] Checking start match for tag: %s", cls.__name__, tag_name)
+        return cls._is_tag_match(tag_name)
+
+    @classmethod
+    def _is_tag_match(cls, tag_name: str) -> bool:
+        raise NotImplementedError("Subclasses must implement _is_tag_match")
+
+    @classmethod
+    def read(cls, lines: FileWrapper) -> Optional[Dict]:
+        """Reads the custom block, handling nesting, raw content, and same-line close."""
+        start_pos = lines.get_pos()
+        start_line_num = lines.line_number()
+        line = next(lines) # Consume the starting line
+        open_match = cls._OPEN_TAG_PATTERN.match(line)
+        if not open_match: lines.set_pos(start_pos); return None # Should not happen if start() worked
+
+        tag_name = open_match.group(1).lower()
+        attrs_str = open_match.group(2)
+        is_xml_self_closing = bool(open_match.group(3))
+        attrs = _parse_attrs_str(attrs_str)
+        open_tag_end_pos = open_match.end(0) # Position right after the opening tag's >
+
+        # Use line end check as additional self-closing heuristic
+        is_self_closing = is_xml_self_closing or line.rstrip().endswith('/>') or tag_name in VOID_ELEMENTS
+
+        if is_self_closing:
+            # Ensure no content after self-closing tag on same line? (Optional strictness)
+            # if line[open_tag_end_pos:].strip(): logger.warning(...)
+            return {"tag_name": tag_name, "attrs": attrs, "content": "", "is_self_closing": True}
+
+        # --- Check for closing tag on the SAME line ---
+        rest_of_line = line[open_tag_end_pos:]
+        # Need a pattern that finds the *correct* corresponding closing tag,
+        # ignoring potential nested ones briefly. This is tricky with regex alone.
+        # Let's try finding the LAST closing tag on the line.
+        close_pattern_same_line = re.compile(f'</({tag_name})>\\s*$', re.IGNORECASE)
+        close_match_same_line = close_pattern_same_line.search(rest_of_line)
+
+        if close_match_same_line:
+             # Check if nesting allows this close (level should be 1)
+             # Simple check: assume if closing tag is on same line, nesting is 0 or 1.
+             # This might be too naive for complex same-line nesting.
+             content_str = rest_of_line[:close_match_same_line.start()]
+             logger.debug("[%s] Found closing tag on same line for: %s", cls.__name__, tag_name)
+             return {"tag_name": tag_name, "attrs": attrs, "content": content_str, "is_self_closing": False}
+        else:
+            # If no closing tag on same line, add the rest of the line to content
+            content_lines_raw = [rest_of_line] # Start content with rest of first line
+
+        # --- Multi-line search (keep previous robust loop) ---
+        nesting_level = 1
+        found_closing_tag = False
+        while True:
+            try:
+                next_line = lines.peek()
+                if next_line is None: break # EOF
+
+                close_match = cls._CLOSE_TAG_PATTERN.match(next_line)
+                if close_match and close_match.group(1).lower() == tag_name:
+                    nesting_level -= 1
+                    if nesting_level == 0:
+                        next(lines); found_closing_tag = True; break
+
+                consumed_line = next(lines)
+                content_lines_raw.append(consumed_line)
+
+                if cls is NestedContentToken:
+                    nested_open_match = cls._OPEN_TAG_PATTERN.match(consumed_line)
+                    if nested_open_match and nested_open_match.group(1).lower() == tag_name:
+                        nested_is_self_closing = bool(nested_open_match.group(3)) or consumed_line.rstrip().endswith('/>')
+                        if not (tag_name in VOID_ELEMENTS or nested_is_self_closing):
+                            nesting_level += 1
+            except StopIteration: break # EOF
+
+        if not found_closing_tag:
+            logger.warning("[%s] Unclosed tag '%s' starting on line %d", cls.__name__, tag_name, start_line_num + 1)
+            lines.set_pos(start_pos); return None
+
+        content_str = "\n".join(content_lines_raw)
+        return {"tag_name": tag_name, "attrs": attrs, "content": content_str, "is_self_closing": False}
+
+
+class RawBlockToken(BaseCustomMistletoeBlock):
+    """Token for blocks whose content should not be parsed as Markdown."""
+    parse_inner: ClassVar[bool] = False
+    @classmethod
+    def _is_tag_match(cls, tag_name: str) -> bool: return tag_name in RAW_BLOCK_TAGS
+
+
+class NestedContentToken(BaseCustomMistletoeBlock):
+    """Token for blocks whose content should be parsed as Markdown."""
+    parse_inner: ClassVar[bool] = True
+    @classmethod
+    def _is_tag_match(cls, tag_name: str) -> bool:
+        """Matches any tag not handled by RawBlockToken."""
+        # Only match custom tags (not standard HTML tags)
+        is_match = tag_name not in RAW_BLOCK_TAGS and not tag_name in {
+            'div', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li',
+            'table', 'tr', 'td', 'th', 'thead', 'tbody', 'tfoot', 'form', 'input',
+            'button', 'select', 'option', 'textarea', 'label', 'fieldset', 'legend',
+            'dl', 'dt', 'dd', 'nav', 'header', 'footer', 'main', 'article', 'section',
+            'aside', 'figure', 'figcaption', 'time', 'mark', 'ruby', 'rt', 'rp',
+            'bdi', 'bdo', 'wbr', 'canvas', 'svg', 'math', 'video', 'audio', 'source',
+            'track', 'embed', 'object', 'param', 'iframe', 'picture', 'source',
+            'img', 'map', 'area', 'table', 'caption', 'colgroup', 'col', 'thead',
+            'tbody', 'tfoot', 'tr', 'td', 'th', 'form', 'input', 'button', 'select',
+            'option', 'optgroup', 'textarea', 'label', 'fieldset', 'legend', 'datalist',
+            'output', 'progress', 'meter', 'details', 'summary', 'dialog', 'menu',
+            'menuitem', 'slot', 'template', 'portal'
+        }
+        return is_match
+
+

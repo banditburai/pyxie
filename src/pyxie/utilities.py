@@ -372,35 +372,42 @@ def safe_import(
     return module 
 
 def parse_html_fragment(content_html: str) -> Any:
-    """Parse HTML fragment, wrapping in div if needed."""
-    from lxml import html, etree
-    
-    # Create a custom parser that preserves custom tags
-    parser = etree.HTMLParser(recover=True)
-    etree.set_default_parser(parser)
-    
+    """Parse an HTML fragment into an lxml element."""
     try:
-        # First try to parse as-is
-        fragment = html.fragment_fromstring(content_html, parser=parser)
+        from lxml import html
         
-        # If we got a div and it's not what we wanted, extract its children
-        if fragment.tag == 'div' and not content_html.strip().startswith('<div'):
-            children = list(fragment)
-            if len(children) == 1:
-                return children[0]
-            return fragment
-            
-        return fragment
-    except Exception:
-        # If that fails, try wrapping in a div
-        fragment = html.fragment_fromstring(f"<div>{content_html}</div>", parser=parser)
+        # Handle empty content
+        if not content_html:
+            return html.fragment_fromstring("<div></div>")
         
-        # If we only have one child and it's not a div, return it
-        children = list(fragment)
-        if len(children) == 1 and not content_html.strip().startswith('<div'):
-            return children[0]
+        # Try parsing as a fragment first
+        try:
+            fragment = html.fragments_fromstring(content_html)
+            if not fragment:
+                return html.fragment_fromstring("<div></div>")
+            elif len(fragment) == 1 and isinstance(fragment[0], html.HtmlElement):
+                return fragment[0]
+            else:
+                wrapper = html.Element("div")
+                for elem in fragment:
+                    if isinstance(elem, str):
+                        if wrapper.text is None:
+                            wrapper.text = elem
+                        else:
+                            wrapper.text += elem
+                    else:
+                        wrapper.append(elem)
+                return wrapper
+        except Exception as e:
+            log(logger, "Utilities", "warning", "parse_html", f"Failed to parse as fragment: {e}")
+            # If that fails, try wrapping in a div
+            wrapped = f"<div>{content_html}</div>"
+            root = html.fragment_fromstring(wrapped)
+            return root
             
-        return fragment
+    except Exception as e:
+        log(logger, "Utilities", "error", "parse_html", f"Failed to parse HTML fragment: {e}")
+        return html.fragment_fromstring("<div></div>")
 
 def build_pagination_urls(
     base_url: str,

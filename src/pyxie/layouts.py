@@ -37,7 +37,7 @@ Example:
 """
 
 import logging
-from typing import Any, Callable, Dict, Optional, Protocol, List, Set
+from typing import Any, Callable, Dict, Optional, Protocol, List, Set, Tuple
 from os import PathLike
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,9 +46,48 @@ import inspect
 from lxml import html
 from fastcore.xml import FT, to_xml
 from .errors import log
-from .slots import process_slots_and_visibility
+from .types import ContentItem
+from .cache import CacheProtocol
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class LayoutResult:
+    """Result of layout resolution."""
+    html: str
+    error: Optional[str] = None
+
+def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = None) -> LayoutResult:
+    """Handle caching and layout resolution in one step."""
+    collection = item.collection or "content"
+    layout_name = item.metadata.get("layout")  # Don't use default layout
+    
+    if cache and (cached := cache.get(collection, item.source_path, layout_name or "default")):
+        return LayoutResult(html=cached)
+    
+    if layout_name and (layout := get_layout(layout_name)):
+        sig = inspect.signature(layout.func)
+        params = list(sig.parameters.values())
+        
+        # If the layout function expects a single 'metadata' parameter, pass the entire metadata dict
+        if len(params) == 1 and params[0].name == 'metadata':
+            return LayoutResult(html=layout.create(metadata=item.metadata))
+            
+        # Otherwise, filter metadata to match the function's parameters
+        metadata = {k: v for k, v in item.metadata.items() if k != "layout" and k in sig.parameters}
+        return LayoutResult(html=layout.create(**metadata))
+    
+    if layout_name:
+        error_msg = f"Layout '{layout_name}' not found"
+        log(logger, "Renderer", "warning", "layout", error_msg)
+        return LayoutResult(html="", error=error_msg)
+    
+    # If no layout is specified, use the default layout
+    if default_layout := get_layout("default"):
+        return LayoutResult(html=default_layout.create())
+    
+    # If no default layout exists, return empty string
+    return LayoutResult(html="")
 
 class LayoutError(Exception):
     """Base class for layout-related errors."""
@@ -95,36 +134,21 @@ class Layout:
         Raises:
             LayoutValidationError: If the layout returns a non-FastHTML value
         """
-        try:
-            # Extract slots if provided
-            slots = kwargs.pop("slots", None)
-            
+        try:                        
             # Call the layout function
             result = self.func(*args, **kwargs)
             
-            # Handle different return types
-            if isinstance(result, tuple) and all(isinstance(item, FT) for item in result):                
-                layout_xml = to_xml(result)
-            elif isinstance(result, (FT, str)):
-                layout_xml = to_xml(result) if isinstance(result, FT) else result
+            # Convert result to XML string
+            if isinstance(result, FT):
+                return to_xml(result)
+            elif isinstance(result, str):
+                return result
             else:
                 raise LayoutValidationError(
                     f"Layout '{self.name}' must return a FastHTML component "
                     f"or HTML string, got {type(result)}"
                 )
                 
-            # Apply slots if provided
-            if slots:
-                from pyxie.slots import process_slots_and_visibility
-                # Pass slot values directly without converting to lists
-                result = process_slots_and_visibility(layout_xml, slots)
-                if not result.was_filled:
-                    log(logger, "Layouts", "error", "create", 
-                        f"Failed to fill slots in layout '{self.name}': {result.error}")
-                return result.element
-                
-            return layout_xml
-            
         except Exception as e:
             log(logger, "Layouts", "error", "create", f"Error creating layout '{self.name}': {e}")
             raise

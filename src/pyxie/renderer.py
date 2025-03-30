@@ -14,114 +14,114 @@
 
 """Renderer module for Pyxie."""
 
-import re
-from typing import Dict, List, Set, Optional, Tuple
-from mistletoe import Document, HtmlRenderer
-from lxml import html
-import inspect
 import logging
-from .errors import log, format_error_html
-from .fasthtml import render_fasthtml
-from .types import ContentItem
-from .layouts import get_layout
-from .slots import process_slots_and_visibility
-from .constants import SELF_CLOSING_TAGS
+import html
+import re
+from typing import Dict, List, Any, Optional, Tuple, Type, Union, Set
 
-from .parser import FastHTMLToken, ScriptToken, NestedContentToken, custom_tokenize_block
-from .cache import CacheProtocol
+# Mistletoe imports
+from mistletoe import Document
+from mistletoe.html_renderer import HTMLRenderer
+from mistletoe.block_token import BlockToken
+from mistletoe.span_token import SpanToken
+
+# Local Pyxie imports
+from .errors import log, format_error_html, PyxieError
+from .types import ContentItem, RenderResult
+from .layouts import handle_cache_and_layout, LayoutResult
+from .fasthtml import execute_fasthtml
+from .slots import process_layout
+from .parser import (
+    RawBlockToken,
+    NestedContentToken,
+    VOID_ELEMENTS,
+    RAW_BLOCK_TAGS,
+)
 
 logger = logging.getLogger(__name__)
 
-def format_html_attrs(attrs: Dict[str, str]) -> str:
-    """Format HTML attributes dictionary into a string."""
-    
-    if not attrs:
-        return ''
-    attrs_str = ' '.join(f'{k}="{v}"' for k, v in attrs.items())
-    return f' {attrs_str}' if attrs_str else ''
+# --- Custom Mistletoe Renderer ---
 
-class NestedRenderer(HtmlRenderer):
-    """A renderer that handles nested markdown content."""
-    
-    def __init__(self):
-        super().__init__()
-        self.render_map['NestedContentToken'] = self.render_nested_content
-        self.render_map['FastHTMLToken'] = self.render_fasthtml
-        self.render_map['ScriptToken'] = self.render_script
-        self._used_ids = set()  # Track used header IDs
-    
-    def _make_id(self, text: str) -> str:
-        """Generate a unique ID for a header."""
+class PyxieRenderer(HTMLRenderer):
+    """
+    Custom Mistletoe renderer that handles Pyxie's custom block tokens,
+    producing an HTML fragment suitable for layout processing.
+    """
+    def __init__(self, *extras: Type[Union[BlockToken, SpanToken]]):
+        # Known custom tokens this renderer handles
+        known_custom_tokens = [RawBlockToken, NestedContentToken]
+        all_tokens_to_register = list(extras) + known_custom_tokens
+        unique_tokens = list(dict.fromkeys(all_tokens_to_register))
+        super().__init__(*unique_tokens)
+        self._used_ids: Set[str] = set() # For unique heading IDs
 
-        # Remove HTML tags and non-word chars, convert to lowercase
-        base_id = re.sub(r'<[^>]+>|[^\w\s-]', '', text.lower()).strip('-') or 'section'
-        # Convert spaces and repeated dashes to single dash
-        base_id = re.sub(r'[-\s]+', '-', base_id)
+        # Check for missing render methods
+        for token_cls in unique_tokens:
+            render_func_name = self._cls_to_func(token_cls.__name__)
+            if not hasattr(self, render_func_name):
+                logger.warning(f"Render function '{render_func_name}' not found for token '{token_cls.__name__}'.")
+
+    # --- Custom Token Render Methods ---
+
+    def render_raw_block_token(self, token: RawBlockToken) -> str:
+        """Renders raw blocks verbatim, handling potential special cases."""
+        if getattr(token, 'is_self_closing', False): # Check flag from parser
+            return f"<{token.tag_name}{self._render_attrs(token.attrs)} />"
+
+        # Specific handling for certain raw tags
+        if token.tag_name in ('fasthtml', 'ft'):
+            # Execute FastHTML code
+            try:
+                result = execute_fasthtml(token.content)
+                if result.error:
+                    return f'<div class="error">Error: {result.error}</div>'
+                elif result.content:
+                    return f'<div{self._render_attrs(token.attrs)}>\n{result.content}\n</div>'
+                return ''
+            except Exception as e:
+                logger.error(f"Failed to execute FastHTML: {e}")
+                return f'<div class="error">Error: {e}</div>'
+
+        elif token.tag_name == 'script':
+            # Script content should not be escaped
+            try:
+                return f'<script{self._render_attrs(token.attrs)}>\n{token.content}\n</script>'
+            except Exception as e:
+                logger.error(f"Failed to render script: {e}")
+                return f'<div class="error">Error: {e}</div>'
+
+        elif token.tag_name == 'style':
+            # Style content should not be escaped
+            try:
+                return f'<style{self._render_attrs(token.attrs)}>\n{token.content}\n</style>'
+            except Exception as e:
+                logger.error(f"Failed to render style: {e}")
+                return f'<div class="error">Error: {e}</div>'
+
+        else:
+            # Default for other raw tags (like pre, code if added to RAW_BLOCK_TAGS)
+            # Raw content should not be escaped
+            try:
+                return f"<{token.tag_name}{self._render_attrs(token.attrs)}>{token.content}</{token.tag_name}>"
+            except Exception as e:
+                logger.error(f"Failed to render raw block {token.tag_name}: {e}")
+                return f'<div class="error">Error: {e}</div>'
+
+    def render_nested_content_token(self, token: NestedContentToken) -> str:
+        """Renders custom blocks by rendering their parsed Markdown children."""
+        if getattr(token, 'is_self_closing', False): # Check flag from parser
+            return f"<{token.tag_name}{self._render_attrs(token.attrs)} />"
+
+        # Children were already parsed by Document() in __init__
+        inner_html = self.render_inner(token) # Recursively render children tokens
         
-        # Ensure uniqueness
-        header_id = base_id
-        counter = 1
-        while header_id in self._used_ids:
-            header_id = f"{base_id}-{counter}"
-            counter += 1
-        self._used_ids.add(header_id)
-        return header_id
-    
-    def render_heading(self, token):
-        """Render heading with automatic ID generation."""
-        inner = self.render_inner(token)
-        return f'<h{token.level} id="{self._make_id(inner)}">{inner}</h{token.level}>'
-    
-    def render_nested_content(self, token):
-        """Render a content block with nested markdown."""
-        try:
-            attrs_str = format_html_attrs(token.attrs)
-            
-            # Handle predefined self-closing tags and explicitly self-closed tags
-            if token.tag_name in SELF_CLOSING_TAGS or token.is_self_closing:
-                return f'<{token.tag_name}{attrs_str} />'
-            
-            # For custom content blocks, render with markdown
-            rendered_blocks = []
-            for child in token.children:
-                if isinstance(child, NestedContentToken):
-                    # Recursively render nested content
-                    rendered = self.render_nested_content(child)
-                    rendered_blocks.append(rendered)
-                else:
-                    # Render other tokens normally
-                    rendered = self.render(child)
-                    rendered_blocks.append(rendered)
-            
-            # Join blocks with newlines
-            inner = '\n'.join(rendered_blocks)
-            return f'<{token.tag_name}{attrs_str}>\n{inner}\n</{token.tag_name}>'
-        except Exception as e:
-            log(logger, "Renderer", "error", "nested_content", f"Failed to render nested content: {e}")
-            return f'<div class="error">Error: {e}</div>'
-    
-    def render_fasthtml(self, token):
-        """Render a FastHTML block."""
-        attrs_str = format_html_attrs(token.attrs)
+        # Add data-slot attribute - any tag that makes it here is a slot
+        attrs = token.attrs.copy()
+        attrs['data-slot'] = token.tag_name
         
-        # Render FastHTML content
-        result = render_fasthtml(token.content)
-        if result.error:
-            return f'<div class="error">Error: {result.error}</div>'
-        elif result.content:
-            return f'<div{attrs_str}>\n{result.content}\n</div>'
-        return ''
-    
-    def render_script(self, token):
-        """Render a script block."""
-        try:
-            attrs_str = format_html_attrs(token.attrs)
-            return f'<script{attrs_str}>\n{token.content}\n</script>'
-        except Exception as e:
-            log(logger, "Renderer", "error", "script", f"Failed to render script: {e}")
-            return f'<div class="error">Error: {e}</div>'
+        return f"<{token.tag_name}{self._render_attrs(attrs)}>{inner_html}</{token.tag_name}>"
 
-    def render_image(self, token):
+    def render_image(self, token) -> str:
         """Render an image token, handling pyxie: URLs."""
         src = token.src
         if src.startswith('pyxie:'):
@@ -134,86 +134,115 @@ class NestedRenderer(HtmlRenderer):
                 # Use picsum.photos for placeholder images
                 src = f"https://picsum.photos/seed/{category}/{width}/{height}"
         
-        template = '<img src="{}" alt="{}"{} />'
-        title = f' title="{token.title}"' if token.title else ''
         # Get alt text from token.children if available, otherwise use empty string
         alt = token.children[0].content if token.children else ""
-        return template.format(src, alt, title)
+        attrs = {'src': src, 'alt': alt}
+        if token.title:
+            attrs['title'] = token.title
+        return f"<img{self._render_attrs(attrs)} />"
 
-def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """Handle caching and layout resolution in one step."""
-    collection = item.collection or "content"
-    layout_name = item.metadata.get("layout")  # Don't use default layout
-    
-    if cache and (cached := cache.get(collection, item.source_path, layout_name or "default")):
-        return cached, None, None
-    
-    if layout_name and (layout := get_layout(layout_name)):
-        sig = inspect.signature(layout.func)
-        params = list(sig.parameters.values())
-        
-        # If the layout function expects a single 'metadata' parameter, pass the entire metadata dict
-        if len(params) == 1 and params[0].name == 'metadata':
-            return None, layout.create(metadata=item.metadata), None
-            
-        # Otherwise, filter metadata to match the function's parameters
-        metadata = {k: v for k, v in item.metadata.items() if k != "layout" and k in sig.parameters}
-        return None, layout.create(**metadata), None
-    
-    if layout_name:
-        error_msg = f"Layout '{layout_name}' not found"
-        log(logger, "Renderer", "warning", "layout", error_msg)
-        return None, None, error_msg
-    
-    return None, None, None
+    def _make_id(self, text: str) -> str:
+        """Generate a unique ID from heading text."""
+        # Consider using a more robust slugify library if needed
+        base_id = re.sub(r'<[^>]+>', '', text) # Strip tags first
+        base_id = re.sub(r'[^\w\s-]', '', base_id.lower()).strip()
+        base_id = re.sub(r'[-\s]+', '-', base_id) or 'section'
+        header_id = base_id
+        counter = 1
+        while header_id in self._used_ids:
+            header_id = f"{base_id}-{counter}"
+            counter += 1
+        self._used_ids.add(header_id)
+        return header_id
 
-def render_content(item: ContentItem, cache: Optional[CacheProtocol] = None) -> str:
-    """Render a content item to HTML using its layout and blocks."""
+    def render_heading(self, token) -> str:
+        """Render heading with automatic ID generation."""
+        inner = self.render_inner(token)
+        # Use the generated ID
+        heading_id = self._make_id(inner)
+        return f'<h{token.level} id="{heading_id}">{inner}</h{token.level}>'
+
+    def render_paragraph(self, token) -> str:
+        """Render a paragraph."""
+        # If there are no children, return empty string
+        if not token.children:
+            return ""
+
+        # If the first child is an Image, use default rendering
+        if token.children[0].__class__.__name__ == 'Image':
+            return super().render_paragraph(token)
+
+        # Default paragraph rendering
+        return super().render_paragraph(token)
+
+    # --- Helper Methods ---
+
+    def _render_attrs(self, attrs: Dict[str, Any]) -> str:
+        """Render HTML attributes."""
+        if not attrs: return ""
+        parts = []
+        for k, v in sorted(attrs.items()):
+             if k.startswith('_') or k == 'is_self_closing': continue # Skip internal attrs
+             if v is True: parts.append(html.escape(k))
+             elif v is False or v is None: continue
+             else: parts.append(f'{html.escape(k)}="{html.escape(str(v), quote=True)}"')
+        return " " + " ".join(parts) if parts else ""
+
+# --- Main Rendering Orchestration Function ---
+
+def render_content(
+    item: ContentItem,
+) -> str:
+    """
+    Renders a ContentItem into its layout template fragment.
+    ... (rest of docstring) ...
+    """
+    module_name = "Renderer"
+    operation_name = "render_content"
+    file_path = getattr(item, 'source_path', None)
+    log(logger, module_name, "info", operation_name, f"Starting for item: {file_path or 'N/A'}", file_path=file_path)
+
     try:
-        # Get from cache or resolve layout
-        cached_html, layout_html, layout_error = handle_cache_and_layout(item, cache)
-        if cached_html: return cached_html
-        if layout_error: return format_error_html("rendering", layout_error)
-        
-        # Create document with custom tokenizer
-        doc = Document('')
-        doc.children = list(custom_tokenize_block(item.content, [FastHTMLToken, ScriptToken, NestedContentToken]))
-        
-        # Render document with our custom renderer
-        with NestedRenderer() as renderer:
-            # Extract content for each slot
-            slots = {}
-            main_content = []
-            
-            for child in doc.children:
-                rendered = renderer.render(child)
-                if isinstance(child, NestedContentToken) and child.tag_name not in SELF_CLOSING_TAGS:
-                    # Use the tag name as the slot name
-                    slot_name = child.tag_name
-                    slots[slot_name] = rendered
-                main_content.append(rendered)
-            
-            # Add main content to slots
-            slots['content'] = '\n'.join(main_content)
-            
-            # If we have a layout, use it
-            if layout_html:
-                # Process slots and conditional visibility
-                result = process_slots_and_visibility(layout_html, slots)
-                if not result.was_filled:
-                    error_msg = f"Failed to fill slots in layout: {result.error}"
-                    log(logger, "Renderer", "error", "render", error_msg)
-                    return format_error_html("rendering", error_msg)
-                
-                # Save to cache if enabled
-                if cache:
-                    cache.store(item.collection or "content", item.source_path, result.element, get_layout("default"))
-                
-                return result.element
-                
-            # If no layout, just return the rendered HTML
-            return slots['content']
-            
+        # 1. Get Layout HTML
+        log(logger, module_name, "debug", operation_name, "Fetching layout...", file_path=file_path)
+        layout_result: LayoutResult = handle_cache_and_layout(item)
+        if layout_result.error:            
+            return format_error_html(layout_result.error, "Layout Loading")
+        layout_html = layout_result.html
+        if not layout_html:             
+             return format_error_html("Layout HTML is empty", "Layout Loading")
+        log(logger, module_name, "debug", operation_name, "Layout HTML obtained.", file_path=file_path)
+
+        # 2. Prepare Content & Render Fragment
+        lines = item.content.splitlines()
+        rendered_fragment = ""
+        if lines or item.content.strip():
+            log(logger, module_name, "debug", operation_name, "Preparing Mistletoe render...", file_path=file_path)
+            # Define the custom tokens needed for parsing
+            custom_tokens_for_parsing = [RawBlockToken, NestedContentToken]
+            log(logger, module_name, "debug", operation_name, f"Using custom tokens: {[t.__name__ for t in custom_tokens_for_parsing]}", file_path=file_path)
+
+            with PyxieRenderer(*custom_tokens_for_parsing) as renderer:
+                try:                    
+                    doc = Document(lines)
+                    rendered_fragment = renderer.render(doc)
+                    log(logger, module_name, "debug", operation_name, "Successfully rendered Markdown to fragment.", file_path=file_path)
+                except Exception as parse_render_err:
+                    rendered_fragment = format_error_html(parse_render_err, "Content Rendering")
+        else:
+            log(logger, module_name, "info", operation_name, "Markdown content is empty.", file_path=file_path)
+
+        # 3. Process Layout via Slots Module
+        log(logger, module_name, "debug", operation_name, "Processing layout and slots...", file_path=file_path)
+        final_html_fragment = process_layout(
+            layout_html=layout_html, # Pass the string
+            rendered_html=rendered_fragment, # Pass the rendered fragment
+            context=item.metadata, # Context for conditionals            
+        )
+        log(logger, module_name, "info", operation_name, "Layout processing completed.", file_path=file_path)
+        return final_html_fragment
+
+    except PyxieError as pe:         
+         return format_error_html(pe, "Layout Processing")
     except Exception as e:
-        log(logger, "Renderer", "error", "render", f"Failed to render content to HTML: {e}")
-        return format_error_html("rendering", str(e)) 
+        return format_error_html(e, "Unexpected Error")

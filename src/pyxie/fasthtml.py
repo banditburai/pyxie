@@ -80,11 +80,18 @@ class PyxieXML:
         return f'<{self.tag}{attr_str}>{" ".join(content)}</{self.tag}>'
 
 def create_namespace(context_path: Optional[Path] = None) -> Dict[str, Any]:
+    """Create a namespace for FastHTML execution."""
     namespace = {name: getattr(ft_common, name) for name in dir(ft_common) if not name.startswith('_')}
     def show(*args):
         if '__results__' not in namespace: namespace['__results__'] = []
         namespace['__results__'].extend(args)
-    namespace.update({'show': show, 'PyxieXML': PyxieXML, 'FT': FT, '__builtins__': __builtins__, '__name__': '__main__'})
+    namespace.update({
+        'show': show,
+        'PyxieXML': PyxieXML,
+        'FT': FT,
+        '__builtins__': __builtins__,
+        '__name__': '__main__'
+    })
     return namespace
 
 def process_imports(code: str, namespace: dict, context_path=None) -> None:
@@ -157,7 +164,15 @@ class FastHTMLRenderer:
         rendered_content = ' '.join(cls._render_component(c) for c in content)
         return f'<{tag}{attr_str}>{rendered_content}</{tag}>'
 
-def render_fasthtml(content: str, context_path: Optional[Path] = None) -> RenderResult:
+def execute_fasthtml(content: str, context_path: Optional[Path] = None) -> RenderResult:
+    """Execute FastHTML code and return the rendered result.
+    
+    Args:
+        content: The FastHTML code to execute
+        context_path: Optional path for resolving imports        
+    Returns:
+        RenderResult containing the rendered HTML or any error
+    """
     if not content: return RenderResult()
     try:
         content = dedent(content.strip())
