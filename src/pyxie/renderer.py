@@ -166,42 +166,26 @@ class PyxieRenderer(HTMLRenderer):
         """Render a paragraph."""
         if not token.children:
             return ""
-        
-        # Just render the paragraph normally - we handle images separately
+                
         inner = self.render_inner(token)
         return f'<p>{inner}</p>' if inner.strip() else ''
 
-    def render_code_fence(self, token) -> str:
-        """Render a code fence block, ensuring proper whitespace handling."""
-        # Get language if specified
-        lang = token.language or ''
-        
-        # Get the raw content
-        code = token.content
-        
-        # Only strip leading/trailing newlines if they are completely empty
-        # This preserves intentional whitespace in the code
-        lines = code.splitlines()
-        if lines:
-            # Remove leading empty lines
-            while lines and not lines[0].strip():
-                lines.pop(0)
-            # Remove trailing empty lines    
-            while lines and not lines[-1].strip():
-                lines.pop()
-            # Join back preserving all internal whitespace
-            code = '\n'.join(lines)
-        
-        # Add language class if specified
-        lang_class = f' class="language-{lang}"' if lang else ''
-        
-        # Escape the code and wrap in pre/code tags
-        return f'<pre><code{lang_class}>{html.escape(code)}</code></pre>'
-
     def render_block_code(self, token) -> str:
         """Render a block code element."""
-        # Handle the same way as code fence for consistency
-        return self.render_code_fence(token)
+        code = token.content.replace('\r\n', '\n')
+        lines = code.splitlines()
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        while lines and not lines[-1].strip():
+            lines.pop()
+        code = '\n'.join(lines)
+        lang = getattr(token, 'language', '')
+        lang_class = f' class="language-{lang}"' if lang else ''
+        return f'<pre><code{lang_class}>{html.escape(code)}</code></pre>'
+
+    def render_fenced_code(self, token) -> str:
+        """Render a fenced code block."""
+        return self.render_block_code(token)
 
     # --- Helper Methods ---
 
@@ -223,7 +207,6 @@ def render_content(
 ) -> str:
     """
     Renders a ContentItem into its layout template fragment.
-    ... (rest of docstring) ...
     """
     module_name = "Renderer"
     operation_name = "render_content"
