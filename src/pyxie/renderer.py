@@ -170,20 +170,26 @@ class PyxieRenderer(HTMLRenderer):
         inner = self.render_inner(token)
         return f'<p>{inner}</p>' if inner.strip() else ''
 
-    def render_block_code(self, token) -> str:
-        """Renders a block code element, preserving whitespace and escaping HTML."""        
-        lang = getattr(token, 'language', '')
-        lang_class = f' class="language-{lang}"' if lang else ''
+    def render_block_code(self, token):
+        code_content = ''
+        if hasattr(token, 'language'):
+            code_content = token.content
+            language = token.language
+        else:
+            code_content = token.content
+            language = ''
+
+        # Remove trailing whitespace but preserve internal newlines
+        code_content = code_content.rstrip()
         
-        # Get content from token, defaulting to empty string
-        code_content = getattr(token.children[0] if token.children else token, 'content', '')
+        # Escape HTML
+        escaped_code = html.escape(code_content)
         
-        # Replace empty lines with a non-breaking space to prevent collapsing
-        lines = code_content.splitlines()
-        code = '\n'.join(line if line.strip() else '\u00A0' for line in lines)
-        code = html.escape(code)
+        # Add language class if specified
+        lang_class = f' class="language-{language}"' if language else ''
         
-        return f'<pre><code{lang_class}>{code}</code></pre>'
+        # Return with pre/code tags
+        return f'<pre><code{lang_class}>{escaped_code}</code></pre>'
 
     # --- Helper Methods ---
 
