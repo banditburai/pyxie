@@ -171,41 +171,19 @@ class PyxieRenderer(HTMLRenderer):
         return f'<p>{inner}</p>' if inner.strip() else ''
 
     def render_block_code(self, token) -> str:
-        """Renders a block code element, preserving whitespace and escaping HTML."""
-        # Get language if specified
+        """Renders a block code element, preserving whitespace and escaping HTML."""        
         lang = getattr(token, 'language', '')
         lang_class = f' class="language-{lang}"' if lang else ''
-
-        # Get the raw content
+        
         if hasattr(token, 'children') and token.children:
             code_content = token.children[0].content
         elif hasattr(token, 'content'):
             code_content = token.content
         else:
             code_content = ''
-        
-        # Split into lines and remove any trailing empty lines
-        lines = code_content.rstrip('\n').split('\n')
-        
-        # Process lines to preserve intentional blank lines but remove extras
-        processed_lines = []
-        prev_line_empty = True  # Track if previous line was empty
-        
-        for line in lines:
-            is_empty = not line.strip()
-            if is_empty and prev_line_empty:
-                continue  # Skip consecutive empty lines
-            processed_lines.append(line)
-            prev_line_empty = is_empty
-        
-        # Remove trailing empty line if it exists
-        if processed_lines and not processed_lines[-1].strip():
-            processed_lines.pop()
-        
-        # Join with single newlines and escape HTML
-        code = html.escape('\n'.join(processed_lines))
-        
-        # Don't add extra newline after the code
+                    
+        code = html.escape(code_content.rstrip('\n').rstrip())
+                
         return f'<pre><code{lang_class}>{code}</code></pre>'
 
     def render_fenced_code(self, token) -> str:
