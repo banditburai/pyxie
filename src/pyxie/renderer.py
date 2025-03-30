@@ -63,6 +63,16 @@ class PyxieRenderer(HTMLRenderer):
 
     # --- Custom Token Render Methods ---
 
+    def render_code_fence(self, token) -> str:
+        """Render a code fence block, ensuring proper whitespace handling."""
+        # Get language if specified
+        lang = token.language or ''
+        # Strip empty lines at start/end but preserve internal whitespace
+        code = token.content.strip('\n')
+        # Add language class if specified
+        lang_class = f' class="language-{lang}"' if lang else ''
+        return f'<pre><code{lang_class}>{html.escape(code)}</code></pre>'
+
     def render_raw_block_token(self, token: RawBlockToken) -> str:
         """Renders raw blocks verbatim, handling potential special cases."""
         if getattr(token, 'is_self_closing', False): # Check flag from parser
@@ -85,7 +95,7 @@ class PyxieRenderer(HTMLRenderer):
         elif token.tag_name == 'script':
             # Script content should not be escaped
             try:
-                return f'<script{self._render_attrs(token.attrs)}>\n{token.content}\n</script>'
+                return f'<script{self._render_attrs(token.attrs)}>\n{token.content.strip()}\n</script>'
             except Exception as e:
                 logger.error(f"Failed to render script: {e}")
                 return f'<div class="error">Error: {e}</div>'
@@ -93,7 +103,7 @@ class PyxieRenderer(HTMLRenderer):
         elif token.tag_name == 'style':
             # Style content should not be escaped
             try:
-                return f'<style{self._render_attrs(token.attrs)}>\n{token.content}\n</style>'
+                return f'<style{self._render_attrs(token.attrs)}>\n{token.content.strip()}\n</style>'
             except Exception as e:
                 logger.error(f"Failed to render style: {e}")
                 return f'<div class="error">Error: {e}</div>'
@@ -102,7 +112,9 @@ class PyxieRenderer(HTMLRenderer):
             # Default for other raw tags (like pre, code if added to RAW_BLOCK_TAGS)
             # Raw content should not be escaped
             try:
-                return f"<{token.tag_name}{self._render_attrs(token.attrs)}>{token.content}</{token.tag_name}>"
+                # Strip only leading/trailing newlines but preserve internal whitespace
+                content = token.content.strip('\n')
+                return f"<{token.tag_name}{self._render_attrs(token.attrs)}>{content}</{token.tag_name}>"
             except Exception as e:
                 logger.error(f"Failed to render raw block {token.tag_name}: {e}")
                 return f'<div class="error">Error: {e}</div>'
