@@ -186,34 +186,36 @@ class PyxieRenderer(HTMLRenderer):
     def render_block_code(self, token: BlockToken) -> str:
         """
         Renders a fenced code block (BlockCode).
-
-        Overrides the default Mistletoe renderer to explicitly handle the
-        code content:
-        1. Strips unwanted leading/trailing newlines.
-        2. Collapses multiple consecutive internal newlines into single newlines
-           to counteract potential extra blank lines added during parsing.
+        
+        Instead of trying to fix newlines after the fact, we:
+        1. Get the original lines from the token
+        2. Preserve the exact formatting from the markdown source
+        3. Only escape HTML characters
         """
-        # Validate token structure: BlockCode should have one RawText child
-        if not token.children or len(token.children) != 1 or not isinstance(token.children[0], RawText):
-            logger.warning(f"BlockCode token has unexpected children structure: {token.children}. Rendering potentially empty.")
-            raw_code = ""
-        else:            
-            raw_code = token.children[0].content
-
-        # --- FIX 1: Strip leading/trailing newlines ---
-        # Removes blank lines potentially added at the very start or end.
-        cleaned_code = raw_code.strip('\n')
-
-        # --- FIX 2: Collapse multiple internal newlines to single newlines ---
-        # This addresses the issue of extra blank lines *within* the block
-        # by replacing any sequence of 2 or more newlines with a single one.
-        # Assumption: Multiple consecutive newlines in the parsed content
-        # are artifacts and not intentional formatting from the original source.
-        cleaned_code = re.sub(r'\n{2,}', '\n', cleaned_code)        
-        escaped_code = html.escape(cleaned_code)        
+        # Get language if specified
         language = getattr(token, 'language', '')
         lang_class = f' class="language-{language}"' if language else ''
-        return f"<pre><code{lang_class}>{escaped_code}</code></pre>"
+        
+        # Access the original source lines if available
+        if hasattr(token, '_lines_cache'):
+            # These are the raw lines between the fences, preserving original formatting
+            code_lines = token._lines_cache
+        else:
+            # Fallback to content from RawText child if _lines_cache not available
+            if not token.children or len(token.children) != 1 or not isinstance(token.children[0], RawText):
+                logger.warning(f"BlockCode token has unexpected structure: {token.children}")
+                return f'<pre><code{lang_class}></code></pre>'
+            code_lines = token.children[0].content.splitlines()
+
+        # Join lines with newlines to preserve exact formatting
+        # Don't strip or normalize - preserve exactly as in source
+        code_content = '\n'.join(code_lines)
+        
+        # Only escape HTML special characters
+        escaped_code = html.escape(code_content)
+        
+        # Return the code block
+        return f'<pre><code{lang_class}>{escaped_code}</code></pre>'
     
 # --- Main Rendering Orchestration Function ---
 

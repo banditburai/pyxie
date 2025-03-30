@@ -29,7 +29,7 @@ from typing import Dict, List, Any, Tuple, Optional, Type, ClassVar, Iterator
 
 # Mistletoe imports
 from mistletoe import Document
-from mistletoe.block_token import BlockToken
+from mistletoe.block_token import BlockToken, BlockCode
 from mistletoe.block_tokenizer import FileWrapper
 
 logger = logging.getLogger(__name__)
@@ -113,6 +113,28 @@ def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
     except Exception as e:
         logger.warning("Unexpected error parsing frontmatter: %s. Skipping.", e)
         return {}, content
+
+# --- Monkey patch Mistletoe's BlockCode to preserve original lines ---
+original_blockcode_read = BlockCode.read
+
+@classmethod
+def blockcode_read_with_lines(cls, lines: FileWrapper):
+    """
+    Wrapper around BlockCode.read that preserves the original lines.
+    This ensures we can reconstruct the exact source formatting later.
+    """
+    result = original_blockcode_read(lines)
+    if result:
+        # Store the raw lines between the fences
+        # Skip the opening and closing fence lines
+        content_lines = result['content'].splitlines()
+        if content_lines:
+            # Store these lines for later use in rendering
+            result['_lines_cache'] = content_lines
+    return result
+
+# Apply the monkey patch
+BlockCode.read = blockcode_read_with_lines
 
 # --- Custom Block Token Definitions ---
 
