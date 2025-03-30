@@ -170,27 +170,6 @@ class PyxieRenderer(HTMLRenderer):
         inner = self.render_inner(token)
         return f'<p>{inner}</p>' if inner.strip() else ''
 
-    def render_block_code(self, token):
-        code_content = ''
-        if hasattr(token, 'language'):
-            code_content = token.content
-            language = token.language
-        else:
-            code_content = token.content
-            language = ''
-
-        # Remove trailing whitespace but preserve internal newlines
-        code_content = code_content.rstrip()
-        
-        # Escape HTML
-        escaped_code = html.escape(code_content)
-        
-        # Add language class if specified
-        lang_class = f' class="language-{language}"' if language else ''
-        
-        # Return with pre/code tags
-        return f'<pre><code{lang_class}>{escaped_code}</code></pre>'
-
     # --- Helper Methods ---
 
     def _render_attrs(self, attrs: Dict[str, Any]) -> str:
@@ -229,9 +208,8 @@ def render_content(
         log(logger, module_name, "debug", operation_name, "Layout HTML obtained.", file_path=file_path)
 
         # 2. Prepare Content & Render Fragment
-        lines = item.content.splitlines()
         rendered_fragment = ""
-        if lines or item.content.strip():
+        if item.content and item.content.strip():
             log(logger, module_name, "debug", operation_name, "Preparing Mistletoe render...", file_path=file_path)
             # Define the custom tokens needed for parsing
             custom_tokens_for_parsing = [RawBlockToken, NestedContentToken]
@@ -239,25 +217,30 @@ def render_content(
 
             with PyxieRenderer(*custom_tokens_for_parsing) as renderer:
                 try:                    
-                    doc = Document(lines)
+                    # Pass raw content directly to Document
+                    doc = Document(item.content)
                     rendered_fragment = renderer.render(doc)
                     log(logger, module_name, "debug", operation_name, "Successfully rendered Markdown to fragment.", file_path=file_path)
                 except Exception as parse_render_err:
+                    # Log the full traceback for debugging
+                    logger.error("Error during Mistletoe parsing/rendering", exc_info=True)
                     rendered_fragment = format_error_html(parse_render_err, "Content Rendering")
         else:
-            log(logger, module_name, "info", operation_name, "Markdown content is empty.", file_path=file_path)
+            log(logger, module_name, "info", operation_name, "Markdown content is empty or whitespace only.", file_path=file_path)
 
         # 3. Process Layout via Slots Module
         log(logger, module_name, "debug", operation_name, "Processing layout and slots...", file_path=file_path)
         final_html_fragment = process_layout(
-            layout_html=layout_html, # Pass the string
-            rendered_html=rendered_fragment, # Pass the rendered fragment
-            context=item.metadata, # Context for conditionals            
+            layout_html=layout_html,
+            rendered_html=rendered_fragment,
+            context=item.metadata,
         )
         log(logger, module_name, "info", operation_name, "Layout processing completed.", file_path=file_path)
         return final_html_fragment
 
-    except PyxieError as pe:         
-         return format_error_html(pe, "Layout Processing")
+    except PyxieError as pe:
+        logger.error("PyxieError during layout processing", exc_info=True)
+        return format_error_html(pe, "Layout Processing")
     except Exception as e:
+        logger.error("Unexpected error in render_content", exc_info=True)
         return format_error_html(e, "Unexpected Error")
