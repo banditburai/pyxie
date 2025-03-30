@@ -178,10 +178,11 @@ class PyxieRenderer(HTMLRenderer):
             lines.pop(0)
         while lines and not lines[-1].strip():
             lines.pop()
-        code = '\n'.join(lines)
+        code = '\n'.join(lines)                
         lang = getattr(token, 'language', '')
         lang_class = f' class="language-{lang}"' if lang else ''
-        return f'<pre><code{lang_class}>{html.escape(code)}</code></pre>'
+        
+        return f'<pre style="white-space: pre !important;"><code{lang_class}>{html.escape(code)}</code></pre>'
 
     def render_fenced_code(self, token) -> str:
         """Render a fenced code block."""
