@@ -182,24 +182,6 @@ class PyxieRenderer(HTMLRenderer):
              elif v is False or v is None: continue
              else: parts.append(f'{html.escape(k)}="{html.escape(str(v), quote=True)}"')
         return " " + " ".join(parts) if parts else ""
-
-    def render_block_code(self, token: BlockToken) -> str:
-        """
-        Renders a fenced code block (BlockCode).
-        Preserves exact formatting from the markdown source.
-        """
-        # Get language if specified
-        language = getattr(token, 'language', '')
-        lang_class = f' class="language-{language}"' if language else ''
-        
-        # Get the raw content from the token
-        code = token.content
-        
-        # Escape HTML special characters
-        escaped_code = html.escape(code)
-        
-        # Return the code block
-        return f'<pre><code{lang_class}>{escaped_code}</code></pre>'
     
 # --- Main Rendering Orchestration Function ---
 

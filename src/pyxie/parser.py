@@ -218,6 +218,8 @@ class BaseCustomMistletoeBlock(BlockToken):
         # --- Multi-line search (keep previous robust loop) ---
         nesting_level = 1
         found_closing_tag = False
+        content_lines_raw = [rest_of_line] # Start content with rest of first line
+
         while True:
             try:
                 next_line = lines.peek()
@@ -227,7 +229,9 @@ class BaseCustomMistletoeBlock(BlockToken):
                 if close_match and close_match.group(1).lower() == tag_name:
                     nesting_level -= 1
                     if nesting_level == 0:
-                        next(lines); found_closing_tag = True; break
+                        next(lines)
+                        found_closing_tag = True
+                        break
 
                 consumed_line = next(lines)
                 content_lines_raw.append(consumed_line)
