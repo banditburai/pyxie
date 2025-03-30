@@ -176,24 +176,19 @@ class PyxieRenderer(HTMLRenderer):
         lang = getattr(token, 'language', '')
         lang_class = f' class="language-{lang}"' if lang else ''
         
-        # Convert blank lines to markers
+        # Process lines to preserve intentional blank lines
         lines = token.content.splitlines()
-        # Use a zero-width space as marker for intentional blank lines
         processed_lines = []
         for line in lines:
-            if not line.strip():
-                processed_lines.append('\u200b')  # zero-width space
+            if line.strip():
+                # Add a span to force tokens to stay on same line
+                processed_lines.append(f'<span style="white-space:pre">{html.escape(line)}</span>')
             else:
-                processed_lines.append(line)
+                # Keep empty lines as markers
+                processed_lines.append('')
             
-        # Remove any truly empty lines (those without our marker)
-        processed_lines = [line for line in processed_lines if line.strip() or line == '\u200b']
-        
-        # Convert markers back to empty lines and join
-        code = '\n'.join('' if line == '\u200b' else line for line in processed_lines)
-        
-        # Escape HTML but preserve our newlines
-        code = html.escape(code)
+        # Join with explicit newlines
+        code = '\n'.join(processed_lines)
         
         return f'<pre><code{lang_class}>{code}</code></pre>'
 
