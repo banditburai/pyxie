@@ -37,7 +37,7 @@ __version__ = "0.1.2"
 def _get_html(self):
     from .renderer import render_content
     try:
-        return render_content(self, getattr(self, '_cache', None))
+        return render_content(self)
     except Exception as e:
         return f"<div>Error: {e}</div>"
 
