@@ -171,10 +171,8 @@ class PyxieRenderer(HTMLRenderer):
         return f'<p>{inner}</p>' if inner.strip() else ''
 
     def render_block_code(self, token) -> str:
-        """Render a block code element."""
-        lines = token.content.splitlines()                
-        processed_lines = [line for line in lines if line.strip()]                    
-        code = '\n'.join(processed_lines)                
+        """Render a block code element."""        
+        code = token.content                
         lang = getattr(token, 'language', '')
         lang_class = f' class="language-{lang}"' if lang else ''
         
