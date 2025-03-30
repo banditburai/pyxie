@@ -195,7 +195,7 @@ class BaseCustomMistletoeBlock(BlockToken):
              return {"tag_name": tag_name, "attrs": attrs, "content": content_str, "is_self_closing": False}
         else:
             # If no closing tag on same line, add the rest of the line to content
-            content_lines_raw = [rest_of_line] # Start content with rest of first line
+            content_lines = [rest_of_line] # Start content with rest of first line
 
         # --- Multi-line search (keep previous robust loop) ---
         nesting_level = 1
@@ -209,10 +209,12 @@ class BaseCustomMistletoeBlock(BlockToken):
                 if close_match and close_match.group(1).lower() == tag_name:
                     nesting_level -= 1
                     if nesting_level == 0:
-                        next(lines); found_closing_tag = True; break
+                        next(lines)
+                        found_closing_tag = True
+                        break
 
                 consumed_line = next(lines)
-                content_lines_raw.append(consumed_line)
+                content_lines.append(consumed_line)
 
                 if cls is NestedContentToken:
                     nested_open_match = cls._OPEN_TAG_PATTERN.match(consumed_line)
@@ -226,7 +228,8 @@ class BaseCustomMistletoeBlock(BlockToken):
             logger.warning("[%s] Unclosed tag '%s' starting on line %d", cls.__name__, tag_name, start_line_num + 1)
             lines.set_pos(start_pos); return None
 
-        content_str = "\n".join(content_lines_raw)
+        # Join lines with newlines to preserve formatting for code blocks and other special tokens
+        content_str = "".join(content_lines)
         return {"tag_name": tag_name, "attrs": attrs, "content": content_str, "is_self_closing": False}
 
 
