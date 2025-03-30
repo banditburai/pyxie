@@ -166,38 +166,24 @@ class BaseCustomMistletoeBlock(BlockToken):
 
         tag_name = open_match.group(1).lower()
         attrs_str = open_match.group(2)
-        is_xml_self_closing = bool(open_match.group(3))
         attrs = _parse_attrs_str(attrs_str)
-        open_tag_end_pos = open_match.end(0) # Position right after the opening tag's >
-
-        # Use line end check as additional self-closing heuristic
-        is_self_closing = is_xml_self_closing or line.rstrip().endswith('/>') or tag_name in VOID_ELEMENTS
-
-        if is_self_closing:
-            # Ensure no content after self-closing tag on same line? (Optional strictness)
-            # if line[open_tag_end_pos:].strip(): logger.warning(...)
+        
+        # Handle self-closing tags (either explicit /> or known void elements)
+        if bool(open_match.group(3)) or tag_name in VOID_ELEMENTS:
             return {"tag_name": tag_name, "attrs": attrs, "content": "", "is_self_closing": True}
 
         # --- Check for closing tag on the SAME line ---
-        rest_of_line = line[open_tag_end_pos:]
-        # Need a pattern that finds the *correct* corresponding closing tag,
-        # ignoring potential nested ones briefly. This is tricky with regex alone.
-        # Let's try finding the LAST closing tag on the line.
+        rest_of_line = line[open_match.end(0):]  # Everything after the opening tag
         close_pattern_same_line = re.compile(f'</({tag_name})>\\s*$', re.IGNORECASE)
         close_match_same_line = close_pattern_same_line.search(rest_of_line)
 
         if close_match_same_line:
-             # Check if nesting allows this close (level should be 1)
-             # Simple check: assume if closing tag is on same line, nesting is 0 or 1.
-             # This might be too naive for complex same-line nesting.
              content_str = rest_of_line[:close_match_same_line.start()]
              logger.debug("[%s] Found closing tag on same line for: %s", cls.__name__, tag_name)
              return {"tag_name": tag_name, "attrs": attrs, "content": content_str, "is_self_closing": False}
-        else:
-            # If no closing tag on same line, add the rest of the line to content
-            content_lines = [rest_of_line] # Start content with rest of first line
 
-        # --- Multi-line search (keep previous robust loop) ---
+        # --- Multi-line content ---
+        content_lines = [rest_of_line]  # Start with rest of opening line
         nesting_level = 1
         found_closing_tag = False
         while True:
@@ -219,19 +205,17 @@ class BaseCustomMistletoeBlock(BlockToken):
                 if cls is NestedContentToken:
                     nested_open_match = cls._OPEN_TAG_PATTERN.match(consumed_line)
                     if nested_open_match and nested_open_match.group(1).lower() == tag_name:
-                        nested_is_self_closing = bool(nested_open_match.group(3)) or consumed_line.rstrip().endswith('/>')
-                        if not (tag_name in VOID_ELEMENTS or nested_is_self_closing):
+                        # Only increase nesting level if it's not a self-closing tag
+                        if not (bool(nested_open_match.group(3)) or tag_name in VOID_ELEMENTS):
                             nesting_level += 1
             except StopIteration: break # EOF
 
         if not found_closing_tag:
             logger.warning("[%s] Unclosed tag '%s' starting on line %d", cls.__name__, tag_name, start_line_num + 1)
             lines.set_pos(start_pos); return None
-
-        # Join lines with newlines to preserve formatting for code blocks and other special tokens
+        
         content_str = "".join(content_lines)
         return {"tag_name": tag_name, "attrs": attrs, "content": content_str, "is_self_closing": False}
-
 
 class RawBlockToken(BaseCustomMistletoeBlock):
     """Token for blocks whose content should not be parsed as Markdown."""
