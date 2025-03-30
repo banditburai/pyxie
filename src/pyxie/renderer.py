@@ -63,16 +63,6 @@ class PyxieRenderer(HTMLRenderer):
 
     # --- Custom Token Render Methods ---
 
-    def render_code_fence(self, token) -> str:
-        """Render a code fence block, ensuring proper whitespace handling."""
-        # Get language if specified
-        lang = token.language or ''
-        # Strip empty lines at start/end but preserve internal whitespace
-        code = token.content.strip('\n')
-        # Add language class if specified
-        lang_class = f' class="language-{lang}"' if lang else ''
-        return f'<pre><code{lang_class}>{html.escape(code)}</code></pre>'
-
     def render_raw_block_token(self, token: RawBlockToken) -> str:
         """Renders raw blocks verbatim, handling potential special cases."""
         if getattr(token, 'is_self_closing', False): # Check flag from parser
@@ -95,7 +85,7 @@ class PyxieRenderer(HTMLRenderer):
         elif token.tag_name == 'script':
             # Script content should not be escaped
             try:
-                return f'<script{self._render_attrs(token.attrs)}>\n{token.content.strip()}\n</script>'
+                return f'<script{self._render_attrs(token.attrs)}>\n{token.content}\n</script>'
             except Exception as e:
                 logger.error(f"Failed to render script: {e}")
                 return f'<div class="error">Error: {e}</div>'
@@ -103,7 +93,7 @@ class PyxieRenderer(HTMLRenderer):
         elif token.tag_name == 'style':
             # Style content should not be escaped
             try:
-                return f'<style{self._render_attrs(token.attrs)}>\n{token.content.strip()}\n</style>'
+                return f'<style{self._render_attrs(token.attrs)}>\n{token.content}\n</style>'
             except Exception as e:
                 logger.error(f"Failed to render style: {e}")
                 return f'<div class="error">Error: {e}</div>'
@@ -112,9 +102,7 @@ class PyxieRenderer(HTMLRenderer):
             # Default for other raw tags (like pre, code if added to RAW_BLOCK_TAGS)
             # Raw content should not be escaped
             try:
-                # Strip only leading/trailing newlines but preserve internal whitespace
-                content = token.content.strip('\n')
-                return f"<{token.tag_name}{self._render_attrs(token.attrs)}>{content}</{token.tag_name}>"
+                return f"<{token.tag_name}{self._render_attrs(token.attrs)}>{token.content}</{token.tag_name}>"
             except Exception as e:
                 logger.error(f"Failed to render raw block {token.tag_name}: {e}")
                 return f'<div class="error">Error: {e}</div>'
@@ -176,16 +164,39 @@ class PyxieRenderer(HTMLRenderer):
 
     def render_paragraph(self, token) -> str:
         """Render a paragraph."""
-        # If there are no children, return empty string
         if not token.children:
             return ""
+        
+        # Just render the paragraph normally - we handle images separately
+        inner = self.render_inner(token)
+        return f'<p>{inner}</p>' if inner.strip() else ''
 
-        # If the first child is an Image, use default rendering
-        if token.children[0].__class__.__name__ == 'Image':
-            return super().render_paragraph(token)
+    def render_code_fence(self, token) -> str:
+        """Render a code fence block, ensuring proper whitespace handling."""
+        # Get language if specified
+        lang = token.language or ''
+        
+        # Split into lines and handle whitespace
+        lines = token.content.split('\n')
+        
+        # Remove empty lines at start and end
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        while lines and not lines[-1].strip():
+            lines.pop()
+            
+        # Join lines back together without adding extra newlines
+        code = '\n'.join(lines)
+        
+        # Add language class if specified
+        lang_class = f' class="language-{lang}"' if lang else ''
+        
+        return f'<pre><code{lang_class}>{html.escape(code)}</code></pre>'
 
-        # Default paragraph rendering
-        return super().render_paragraph(token)
+    def render_block_code(self, token) -> str:
+        """Render a block code element."""
+        # Handle the same way as code fence for consistency
+        return self.render_code_fence(token)
 
     # --- Helper Methods ---
 
