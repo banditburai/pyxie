@@ -178,9 +178,9 @@ class PyxieRenderer(HTMLRenderer):
         # Get content from token, defaulting to empty string
         code_content = getattr(token.children[0] if token.children else token, 'content', '')
         
-        # Replace multiple newlines with single ones and trim ends
+        # Replace double newlines with zero-width space + newline to preserve intentional empty lines
         code = code_content.strip()  # Remove leading/trailing whitespace
-        code = re.sub(r'\n\s*\n', '\n', code)  # Replace multiple newlines (and any whitespace between them) with single newline
+        code = re.sub(r'\n\n+', '\u200B\n', code)  # Replace multiple newlines with zero-width space + newline
         code = html.escape(code)
         
         return f'<pre><code{lang_class}>{code}</code></pre>'
