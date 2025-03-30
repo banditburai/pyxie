@@ -174,15 +174,16 @@ class PyxieRenderer(HTMLRenderer):
         """Renders a block code element, preserving whitespace and escaping HTML."""        
         lang = getattr(token, 'language', '')
         lang_class = f' class="language-{lang}"' if lang else ''        
-        if hasattr(token, 'children') and token.children:            
+        if hasattr(token, 'children') and token.children:
             code_content = token.children[0].content
-        elif hasattr(token, 'content'):            
+        elif hasattr(token, 'content'):
             code_content = token.content
         else:
-            code_content = ''
-
-        # Escape HTML - this preserves whitespace while preventing XSS
-        escaped_code = html.escape(code_content)        
+            code_content = ''                
+        lines = code_content.splitlines(True)                
+        while lines and not lines[-1].strip():
+            lines.pop()                
+        escaped_code = html.escape(''.join(lines))        
         return f'<pre><code{lang_class}>{escaped_code}</code></pre>'
 
     def render_fenced_code(self, token) -> str:
