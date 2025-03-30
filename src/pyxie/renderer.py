@@ -176,8 +176,10 @@ class PyxieRenderer(HTMLRenderer):
         lang_class = f' class="language-{lang}"' if lang else ''
         
         # Get content from token, defaulting to empty string
-        code_content = getattr(token.children[0] if token.children else token, 'content', '')                
-        code = code_content.strip()  # Remove leading/trailing whitespace        
+        code_content = getattr(token.children[0] if token.children else token, 'content', '')
+                
+        code = code_content.strip()  # Remove leading/trailing whitespace
+        code = re.sub(r'\n\n\n+', '\n\n', code)  # Replace 3+ newlines with exactly two        
         code = html.escape(code)
         
         return f'<pre><code{lang_class}>{code}</code></pre>'
