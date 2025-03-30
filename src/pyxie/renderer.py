@@ -23,7 +23,7 @@ from typing import Dict, List, Any, Optional, Tuple, Type, Union, Set
 from mistletoe import Document
 from mistletoe.html_renderer import HTMLRenderer
 from mistletoe.block_token import BlockToken
-from mistletoe.span_token import SpanToken
+from mistletoe.span_token import SpanToken, RawText
 
 # Local Pyxie imports
 from .errors import log, format_error_html, PyxieError
@@ -183,6 +183,38 @@ class PyxieRenderer(HTMLRenderer):
              else: parts.append(f'{html.escape(k)}="{html.escape(str(v), quote=True)}"')
         return " " + " ".join(parts) if parts else ""
 
+    def render_block_code(self, token: BlockToken) -> str:
+        """
+        Renders a fenced code block (BlockCode).
+
+        Overrides the default Mistletoe renderer to explicitly handle the
+        code content:
+        1. Strips unwanted leading/trailing newlines.
+        2. Collapses multiple consecutive internal newlines into single newlines
+           to counteract potential extra blank lines added during parsing.
+        """
+        # Validate token structure: BlockCode should have one RawText child
+        if not token.children or len(token.children) != 1 or not isinstance(token.children[0], RawText):
+            logger.warning(f"BlockCode token has unexpected children structure: {token.children}. Rendering potentially empty.")
+            raw_code = ""
+        else:            
+            raw_code = token.children[0].content
+
+        # --- FIX 1: Strip leading/trailing newlines ---
+        # Removes blank lines potentially added at the very start or end.
+        cleaned_code = raw_code.strip('\n')
+
+        # --- FIX 2: Collapse multiple internal newlines to single newlines ---
+        # This addresses the issue of extra blank lines *within* the block
+        # by replacing any sequence of 2 or more newlines with a single one.
+        # Assumption: Multiple consecutive newlines in the parsed content
+        # are artifacts and not intentional formatting from the original source.
+        cleaned_code = re.sub(r'\n{2,}', '\n', cleaned_code)        
+        escaped_code = html.escape(cleaned_code)        
+        language = getattr(token, 'language', '')
+        lang_class = f' class="language-{language}"' if language else ''
+        return f"<pre><code{lang_class}>{escaped_code}</code></pre>"
+    
 # --- Main Rendering Orchestration Function ---
 
 def render_content(
