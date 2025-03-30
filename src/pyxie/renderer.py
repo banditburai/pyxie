@@ -176,21 +176,26 @@ class PyxieRenderer(HTMLRenderer):
         # Get language if specified
         lang = token.language or ''
         
-        # Split into lines and handle whitespace
-        lines = token.content.split('\n')
+        # Get the raw content
+        code = token.content
         
-        # Remove empty lines at start and end
-        while lines and not lines[0].strip():
-            lines.pop(0)
-        while lines and not lines[-1].strip():
-            lines.pop()
-            
-        # Join lines back together without adding extra newlines
-        code = '\n'.join(lines)
+        # Only strip leading/trailing newlines if they are completely empty
+        # This preserves intentional whitespace in the code
+        lines = code.splitlines()
+        if lines:
+            # Remove leading empty lines
+            while lines and not lines[0].strip():
+                lines.pop(0)
+            # Remove trailing empty lines    
+            while lines and not lines[-1].strip():
+                lines.pop()
+            # Join back preserving all internal whitespace
+            code = '\n'.join(lines)
         
         # Add language class if specified
         lang_class = f' class="language-{lang}"' if lang else ''
         
+        # Escape the code and wrap in pre/code tags
         return f'<pre><code{lang_class}>{html.escape(code)}</code></pre>'
 
     def render_block_code(self, token) -> str:
