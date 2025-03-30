@@ -171,26 +171,19 @@ class PyxieRenderer(HTMLRenderer):
         return f'<p>{inner}</p>' if inner.strip() else ''
 
     def render_block_code(self, token) -> str:
-        """Renders a block code element, escaping HTML and removing extra blank lines."""
+        """Renders a block code element, preserving whitespace and escaping HTML."""        
         lang = getattr(token, 'language', '')
         lang_class = f' class="language-{lang}"' if lang else ''
-
-        # Get raw code content (Mistletoe stores it in the first child for fenced code)
-        if hasattr(token, 'children') and token.children and hasattr(token.children[0], 'content'):
-            code_content = token.children[0].content
-        elif hasattr(token, 'content'): # Fallback for other potential code block types
-            code_content = token.content
-        else:
-            code_content = ''
-        lines = code_content.splitlines()        
-        processed_lines = [line for line in lines if line.strip()]        
-        code = html.escape('\n'.join(processed_lines))        
-
+        
+        # Get content from token, defaulting to empty string
+        code_content = getattr(token.children[0] if token.children else token, 'content', '')
+        
+        # Replace multiple newlines with single ones and trim ends
+        code = code_content.strip()  # Remove leading/trailing whitespace
+        code = re.sub(r'\n\s*\n', '\n', code)  # Replace multiple newlines (and any whitespace between them) with single newline
+        code = html.escape(code)
+        
         return f'<pre><code{lang_class}>{code}</code></pre>'
-
-    def render_fenced_code(self, token) -> str:
-        """Renders a fenced code block by delegating to render_block_code."""
-        return self.render_block_code(token)
 
     # --- Helper Methods ---
 
