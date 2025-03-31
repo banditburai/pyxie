@@ -101,11 +101,8 @@ class ContentItem:
         ensures consistent image generation for the same post.
         """
         # Remove special characters from slug to make it more URL-friendly
-        clean_slug = self.slug.replace("-", "").replace("_", "")
-        # Use index from metadata if available, otherwise use the default index
-        index = self.metadata.get("index", self.index)
-        # Combine index and slug to ensure uniqueness
-        return f"{index:04d}-{clean_slug}"
+        clean_slug = self.slug.replace("-", "").replace("_", "")        
+        return f"{self.index:04d}-{clean_slug}"
     
     @property
     def image(self) -> Optional[str]:
@@ -115,7 +112,7 @@ class ContentItem:
         if template := self.metadata.get("image_template"):
             try:
                 format_params = {
-                    "index": self.metadata.get("index", self.index),
+                    "index": self.index,
                     "slug": self.slug,
                     "seed": self._generate_image_seed()
                 }

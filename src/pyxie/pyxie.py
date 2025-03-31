@@ -132,16 +132,20 @@ class Pyxie:
             return            
         if self.cache:
             item._cache = self.cache            
-        item.index = index
+        item.index = index  # Set the instance field only
         item._pyxie = self      
         collection._items[item.slug] = item
         self._items[item.slug] = item
     
     def _load_collection(self, collection: Collection) -> None:
         """Load content items from collection."""
-        next_index = len(self._items)
+        # Get the current highest index across all collections
+        next_index = max((item.index for item in self._items.values()), default=-1) + 1
         
-        for path in collection.path.glob("**/*.md"):
+        # Sort paths to ensure consistent indexing across restarts
+        sorted_paths = sorted(collection.path.glob("**/*.md"))
+        
+        for path in sorted_paths:
             if item := load_content_file(path, collection.default_metadata, logger):
                 self._process_content_item(item, next_index, collection)
                 next_index += 1
