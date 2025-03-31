@@ -108,7 +108,10 @@ class ContentItem:
     def image(self) -> Optional[str]:
         """Get image URL, using template if available."""        
         if image := self.metadata.get("image"):
-            return image                    
+            return image
+        if featured_image := self.metadata.get("featured_image"):
+            return featured_image
+        # Fall back to template if available
         if template := self.metadata.get("image_template"):
             try:
                 format_params = {
