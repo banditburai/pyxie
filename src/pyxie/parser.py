@@ -241,7 +241,7 @@ class NestedContentToken(BaseCustomMistletoeBlock):
             'track', 'embed', 'object', 'param', 'iframe', 'picture', 'source',
             'img', 'map', 'area', 'table', 'caption', 'colgroup', 'col', 'thead',
             'tbody', 'tfoot', 'tr', 'td', 'th', 'form', 'input', 'button', 'select',
-            'option', 'optgroup', 'textarea', 'label', 'fieldset', 'legend', 'datalist',
+            'option', 'optgroup', 'datalist',
             'output', 'progress', 'meter', 'details', 'summary', 'dialog', 'menu',
             'menuitem', 'slot', 'template', 'portal'
         }

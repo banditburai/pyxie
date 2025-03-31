@@ -24,6 +24,7 @@ from mistletoe import Document
 from mistletoe.html_renderer import HTMLRenderer
 from mistletoe.block_token import BlockToken
 from mistletoe.span_token import SpanToken, RawText
+from mistletoe.latex_token import Math
 
 # Local Pyxie imports
 from .errors import log, format_error_html, PyxieError
@@ -49,9 +50,8 @@ class PyxieRenderer(HTMLRenderer):
     """
     def __init__(self, *extras: Type[Union[BlockToken, SpanToken]]):
         # Known custom tokens this renderer handles
-        known_custom_tokens = [RawBlockToken, NestedContentToken]
-        all_tokens_to_register = list(extras) + known_custom_tokens
-        unique_tokens = list(dict.fromkeys(all_tokens_to_register))
+        known_custom_tokens = [RawBlockToken, NestedContentToken, Math]
+        unique_tokens = list(dict.fromkeys(list(extras) + known_custom_tokens))
         super().__init__(*unique_tokens)
         self._used_ids: Set[str] = set() # For unique heading IDs
 
@@ -60,6 +60,22 @@ class PyxieRenderer(HTMLRenderer):
             render_func_name = self._cls_to_func(token_cls.__name__)
             if not hasattr(self, render_func_name):
                 logger.warning(f"Render function '{render_func_name}' not found for token '{token_cls.__name__}'.")
+
+    def render_math(self, token: Math) -> str:
+        """Render math tokens using KaTeX.
+        
+        Handles both inline math ($...$) and display math ($$...$$).
+        Outputs HTML that KaTeX can process on the client side.
+        """
+        content = token.content
+        # Check if it's display math ($$) or inline math ($)
+        display_mode = content.startswith('$$') and content.endswith('$$')
+        if display_mode:
+            tex = content[2:-2].strip()  # Remove $$ delimiters
+            return f'<div class="katex-block" data-tex="{html.escape(tex)}"></div>'
+        else:
+            tex = content[1:-1].strip()  # Remove $ delimiters
+            return f'<span class="katex-inline" data-tex="{html.escape(tex)}"></span>'
 
     # --- Custom Token Render Methods ---
 
@@ -140,6 +156,7 @@ class PyxieRenderer(HTMLRenderer):
         if token.title:
             attrs['title'] = token.title
         return f"<img{self._render_attrs(attrs)} />"
+
 
     def _make_id(self, text: str) -> str:
         """Generate a unique ID from heading text."""
