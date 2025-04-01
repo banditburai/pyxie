@@ -23,6 +23,7 @@ import fasthtml.common as ft_common
 from .utilities import safe_import
 from .types import RenderResult
 from .errors import log
+from .parser import VOID_ELEMENTS
 
 logger = logging.getLogger(__name__)
 IMPORT_PATTERN = re.compile(r'^(?:from\s+([^\s]+)\s+import|import\s+([^#\n]+))', re.MULTILINE)
@@ -70,9 +71,8 @@ class PyxieXML:
         
         if self.tag.lower() == 'script':
             return f'<script{attr_str}>{self.content}</script>'
-        
-        from .constants import SELF_CLOSING_TAGS
-        if self.tag.lower() in SELF_CLOSING_TAGS:
+                
+        if self.tag.lower() in VOID_ELEMENTS:
             return f'<{self.tag}{attr_str}>'
         
         content = [str(self.content)] if self.content else []
@@ -144,21 +144,20 @@ class FastHTMLRenderer:
         for key, value in vars(component).items():
             if key == 'children':
                 content.extend(value if isinstance(value, (list, tuple)) else [value])
-            elif key == 'attrs':
-                attrs.update(value)
+            elif key == 'attrs' and value is not None:
+                attrs.update({k: v for k, v in value.items() if v is not None})
             elif not key.startswith('_'):
                 if key == 'tag': tag = value
                 elif key not in ('listeners_', 'void_'): attrs[key] = value
         
-        attr_list = [f'{k}="{v}"' if v is not True else k for k, v in attrs.items() if v is not False and not k.startswith('_')]
+        attr_list = [f'{k}="{v}"' if v is not True else k for k, v in attrs.items() if v is not False and v is not None and not k.startswith('_')]
         attr_str = ' ' + ' '.join(attr_list) if attr_list else ''
         
         if tag.lower() == 'script':
             script_content = [str(c) if isinstance(c, str) else cls._render_component(c) for c in content]
             return f'<script{attr_str}>\n{" ".join(script_content)}\n</script>'
-        
-        from .constants import SELF_CLOSING_TAGS
-        if tag.lower() in SELF_CLOSING_TAGS:
+                
+        if tag.lower() in VOID_ELEMENTS:
             return f'<{tag}{attr_str}/>'
         
         rendered_content = ' '.join(cls._render_component(c) for c in content)

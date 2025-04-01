@@ -1,17 +1,54 @@
 """Test the parser module."""
 
 import pytest
+import mistletoe
+import logging
 from datetime import date
 from pathlib import Path
 from typing import Dict, Any
 from mistletoe import Document
+from mistletoe import block_token as mistletoe_block_token
+from mistletoe import span_token as mistletoe_span_token
+from mistletoe.block_token import Heading, Paragraph, List, ListItem, HtmlBlock, CodeFence
+from mistletoe.span_token import Emphasis, Strong, RawText, HTMLSpan, InlineCode
 from fastcore.xml import FT, Div
 
-from pyxie.parser import parse_frontmatter, custom_tokenize_block, NestedContentToken, FastHTMLToken, ScriptToken
+from pyxie.parser import parse_frontmatter, RawBlockToken, NestedContentToken
 from pyxie.constants import DEFAULT_METADATA
 
+logger = logging.getLogger(__name__)
+
+@pytest.fixture(autouse=True)
+def setup_and_teardown():
+    """Fixture to set up and tear down custom tokens for testing."""
+    # Save original token types
+    from mistletoe.block_token import _token_types as mistletoe_block_token
+    from mistletoe.span_token import _token_types as mistletoe_span_token
+    original_block_tokens = mistletoe_block_token.copy()
+    original_span_tokens = mistletoe_span_token.copy()
+
+    # Remove HtmlBlock and HtmlSpan to prevent special handling of HTML tags
+    if HtmlBlock in mistletoe_block_token:
+        mistletoe_block_token.remove(HtmlBlock)
+    if HTMLSpan in mistletoe_span_token:
+        mistletoe_span_token.remove(HTMLSpan)
+
+    # Register our custom tokens with high priority
+    logger.debug("Custom tokens registered for test.")
+    mistletoe_block_token.insert(0, RawBlockToken)
+    mistletoe_block_token.insert(1, NestedContentToken)
+
+    yield
+
+    # Restore original token types
+    mistletoe_block_token.clear()
+    mistletoe_block_token.extend(original_block_tokens)
+    mistletoe_span_token.clear()
+    mistletoe_span_token.extend(original_span_tokens)
+    logger.debug("Tokens reset after test.")
+
 # Define token types for testing
-TOKEN_TYPES = [NestedContentToken, FastHTMLToken, ScriptToken]
+TOKEN_TYPES = [NestedContentToken, RawBlockToken]
 
 @pytest.fixture
 def sample_markdown() -> str:
@@ -78,10 +115,10 @@ def test_custom_block_parsing() -> None:
     This is a custom block with **bold** text.
 </custom>"""
     
-    tokens = list(custom_tokenize_block(content, TOKEN_TYPES))
+    doc = Document(content.splitlines())
     
-    assert len(tokens) == 1
-    token = tokens[0]
+    assert len(doc.children) == 1
+    token = doc.children[0]
     assert isinstance(token, NestedContentToken)
     assert token.tag_name == "custom"
     assert token.attrs == {"class": "test"}
@@ -96,10 +133,10 @@ def test_nested_block_parsing() -> None:
     </nested>
 </custom>"""
     
-    tokens = list(custom_tokenize_block(content, TOKEN_TYPES))
+    doc = Document(content.splitlines())
     
-    assert len(tokens) == 1
-    token = tokens[0]
+    assert len(doc.children) == 1
+    token = doc.children[0]
     assert isinstance(token, NestedContentToken)
     assert token.tag_name == "custom"
     assert "Outer content" in token.content
@@ -112,11 +149,12 @@ def test_fasthtml_block_parsing() -> None:
     show(Div("Test", cls="test"))
 </fasthtml>"""
     
-    tokens = list(custom_tokenize_block(content, TOKEN_TYPES))
+    doc = Document(content.splitlines())
     
-    assert len(tokens) == 1
-    token = tokens[0]
-    assert isinstance(token, FastHTMLToken)
+    assert len(doc.children) == 1
+    token = doc.children[0]
+    assert isinstance(token, RawBlockToken)
+    assert token.tag_name == "fasthtml"
     assert 'show(Div("Test", cls="test"))' in token.content.strip()
 
 def test_script_block_parsing() -> None:
@@ -125,11 +163,12 @@ def test_script_block_parsing() -> None:
     console.log("Test");
 </script>"""
     
-    tokens = list(custom_tokenize_block(content, TOKEN_TYPES))
+    doc = Document(content.splitlines())
     
-    assert len(tokens) == 1
-    token = tokens[0]
-    assert isinstance(token, ScriptToken)
+    assert len(doc.children) == 1
+    token = doc.children[0]
+    assert isinstance(token, RawBlockToken)
+    assert token.tag_name == "script"
     assert 'console.log("Test");' in token.content.strip()
 
 def test_mixed_block_parsing() -> None:
@@ -147,10 +186,10 @@ def test_mixed_block_parsing() -> None:
     </script>
 </custom>"""
     
-    tokens = list(custom_tokenize_block(content, TOKEN_TYPES))
+    doc = Document(content.splitlines())
     
-    assert len(tokens) == 1
-    token = tokens[0]
+    assert len(doc.children) == 1
+    token = doc.children[0]
     assert isinstance(token, NestedContentToken)
     assert token.tag_name == "custom"
     assert "**bold**" in token.content

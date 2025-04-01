@@ -18,142 +18,16 @@ This module contains general-purpose utilities used across the package.
 """
 
 import logging
-from typing import Dict, Optional, Any, List, Union, Callable, Tuple, Iterator
-from html import escape
+from typing import Dict, Optional, Any, List, Union
 from pathlib import Path
 import hashlib
 import importlib.util
 import os
-import re
-from dataclasses import dataclass
-from .types import ContentItem, RenderResult
+from .types import ContentItem
 
-from .constants import DEFAULT_METADATA
 from .errors import log
 
 logger = logging.getLogger(__name__)
-
-def format_error_html(error_type: str, message: str) -> str:
-    """Format an error message as HTML."""
-    return f'<div class="fasthtml-error">ERROR: {error_type.upper()}: {message}</div>'
-
-def safe_html_escape(text: Optional[str], quote: bool = True) -> str:
-    """Escape HTML text, handling None values."""
-    return escape(text, quote=quote) if text else ""
-
-def merge_html_classes(*classes: Optional[str]) -> str:
-    """Combine multiple HTML class strings into space-separated unique classes."""
-    all_classes = set()
-    for cls in classes:
-        if cls:
-            all_classes.update(c.strip() for c in cls.split())
-    return " ".join(sorted(all_classes))
-
-def set_html_attributes(
-    element: Any, 
-    attributes: Dict[str, str], 
-    logger_instance: Optional[logging.Logger] = None
-) -> None:
-    """Set HTML attributes on an element, handling different element types."""
-    try:
-        # Handle class/cls attributes consistently
-        if 'cls' in attributes and 'class' not in attributes:
-            attributes['class'] = attributes.pop('cls')
-            
-        for key, value in attributes.items():
-            if hasattr(element, "set"):
-                element.set(key, value)
-            elif hasattr(element, "__setitem__"):
-                element[key] = value
-            elif hasattr(element, key):
-                setattr(element, key, value)
-            else:
-                method = getattr(logger_instance, "warning") if logger_instance else print
-                method(f"Could not set attribute {key} on element {element}")
-    except Exception as e:
-        method = getattr(logger_instance, "error") if logger_instance else print
-        method(f"Error setting attributes: {e}")
-
-def _split_html_at_scripts(content: str) -> Iterator[Tuple[str, bool, int, int]]:
-    """Split HTML at script tag boundaries, yielding (content, is_script, start, end) tuples."""
-    script_pattern = re.compile(r'(<script[^>]*>)(.*?)(</script>)', re.DOTALL)
-    last_end = 0
-    
-    for match in script_pattern.finditer(content):
-        start, end = match.start(), match.end()
-        
-        # Yield HTML before this script (if any)
-        if start > last_end:
-            yield (content[last_end:start], False, last_end, start)
-        
-        # Yield the script tag
-        script_tag = match.group(0)
-        yield (script_tag, True, start, end)
-        
-        last_end = end
-    
-    # Yield remaining content after last script
-    if last_end < len(content):
-        yield (content[last_end:], False, last_end, len(content))
-
-def _process_script_tag(script_tag: str) -> str:
-    """Ensure script tag has data-raw attribute and clean content of HTML escapes."""
-    script_pattern = re.compile(r'(<script[^>]*>)(.*?)(</script>)', re.DOTALL)
-    match = script_pattern.match(script_tag)
-    
-    if not match:
-        return script_tag
-        
-    script_opening = match.group(1)
-    script_content = match.group(2)
-    script_closing = match.group(3)
-    
-    # Ensure data-raw attribute is present
-    if "data-raw" not in script_opening:
-        script_opening = script_opening.replace("<script", "<script data-raw=\"true\"", 1)
-    
-    # Clean script content of HTML escape sequences
-    script_content = script_content.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
-    
-    return f"{script_opening}{script_content}{script_closing}"
-
-def extract_scripts(content: str) -> List[Tuple[str, bool]]:
-    """Extract script tags and HTML content, returning pairs of (content_fragment, is_script)."""
-    parts = []
-    
-    for part, is_script, _, _ in _split_html_at_scripts(content):
-        if is_script:
-            parts.append((_process_script_tag(part), True))
-        else:
-            parts.append((part, False))
-    
-    return parts
-
-def apply_html_attributes(
-    html_str: str, 
-    attributes: Dict[str, str], 
-    logger_instance: Optional[logging.Logger] = None
-) -> str:
-    """Apply attributes to the first element in an HTML string."""
-    try:
-        from lxml import html
-        temp_div = html.fragment_fromstring(f"<div>{html_str}</div>")
-        
-        children = temp_div.getchildren()
-        first_element = children[0] if children else temp_div
-        
-        set_html_attributes(first_element, attributes, logger_instance)
-        
-        if children:
-            return ''.join(
-                html.tostring(child, encoding='unicode', method='html')
-                for child in children
-            )
-        return html_str
-    except Exception as e:
-        method = getattr(logger_instance, "warning") if logger_instance else print
-        method(f"Failed to add attributes to HTML: {e}")
-        return html_str
 
 def normalize_path(path: Union[str, Path]) -> str:
     """Convert a path to its resolved string representation."""
@@ -206,6 +80,12 @@ def load_content_file(
         # Load and parse content
         content = file_path.read_text()
         metadata, content = parse_frontmatter(content)
+        
+        # Skip file if metadata parsing failed
+        if metadata is None or content is None:
+            if logger_instance:
+                log(logger_instance, "ContentLoader", "warning", "load", f"Skipping {file_path} due to invalid frontmatter")
+            return None
                 
         merged_metadata = DEFAULT_METADATA | (default_metadata or {}) | metadata
         
@@ -218,14 +98,6 @@ def load_content_file(
         if logger_instance:
             log(logger_instance, "ContentLoader", "error", "load", f"Failed to load {file_path}: {e}")
         return None
-
-def merge_metadata(*metadata_dicts: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Merge multiple metadata dictionaries, non-None values taking precedence."""
-    result: Dict[str, Any] = {}
-    for meta in metadata_dicts:
-        if meta:
-            result.update({k: v for k, v in meta.items() if v is not None})
-    return result
 
 def resolve_default_layout(
     default_layout: str,
@@ -252,50 +124,6 @@ def normalize_tags(tags: Any) -> List[str]:
     if isinstance(tags, str):
         tags = [t.strip() for t in tags.split(",")]
     return sorted(set(str(t).strip().lower() for t in tags if t))
-
-def get_line_number(text: str, position: int) -> int:
-    """Get 1-indexed line number for a character position in text."""
-    if position <= 0:
-        return 1
-    return text[:position].count('\n') + 1
-
-def convert_value(value: str) -> Any:
-    """Convert string to appropriate Python type (bool, int, float, list, etc)."""
-    value = value.strip()
-    
-    # Handle quoted values
-    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
-        return value[1:-1]
-    
-    # Handle lists
-    if value.startswith('[') and value.endswith(']'):
-        return [v.strip(' "\'') for v in value[1:-1].split(',') if v.strip()]
-        
-    # Handle other types
-    match value.lower():
-        case 'true' | 'yes':
-            return True
-        case 'false' | 'no':
-            return False
-        case 'null' | '~' | '':
-            return None
-        case s if s.isdigit():
-            return int(s)
-        case s if is_float(s):
-            try:
-                return float(s)
-            except ValueError:
-                pass
-    
-    return value
-
-def is_float(value: str) -> bool:
-    """Check if string can be converted to a float."""
-    try:
-        float(value)
-        return True
-    except ValueError:
-        return False
 
 def _find_module_in_context(
     module_name: str, 
@@ -370,44 +198,6 @@ def safe_import(
         log(logger_instance, "Utilities", "warning", "import", f"Could not import module '{module_name}'")
         
     return module 
-
-def parse_html_fragment(content_html: str) -> Any:
-    """Parse an HTML fragment into an lxml element."""
-    try:
-        from lxml import html
-        
-        # Handle empty content
-        if not content_html:
-            return html.fragment_fromstring("<div></div>")
-        
-        # Try parsing as a fragment first
-        try:
-            fragment = html.fragments_fromstring(content_html)
-            if not fragment:
-                return html.fragment_fromstring("<div></div>")
-            elif len(fragment) == 1 and isinstance(fragment[0], html.HtmlElement):
-                return fragment[0]
-            else:
-                wrapper = html.Element("div")
-                for elem in fragment:
-                    if isinstance(elem, str):
-                        if wrapper.text is None:
-                            wrapper.text = elem
-                        else:
-                            wrapper.text += elem
-                    else:
-                        wrapper.append(elem)
-                return wrapper
-        except Exception as e:
-            log(logger, "Utilities", "warning", "parse_html", f"Failed to parse as fragment: {e}")
-            # If that fails, try wrapping in a div
-            wrapped = f"<div>{content_html}</div>"
-            root = html.fragment_fromstring(wrapped)
-            return root
-            
-    except Exception as e:
-        log(logger, "Utilities", "error", "parse_html", f"Failed to parse HTML fragment: {e}")
-        return html.fragment_fromstring("<div></div>")
 
 def build_pagination_urls(
     base_url: str,

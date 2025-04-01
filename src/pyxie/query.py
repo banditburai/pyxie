@@ -325,7 +325,9 @@ class Query(Generic[T]):
             if value is None:
                 continue
                 
-            if "__" in key:
+            if key == "tags":
+                self._filters.append(FilterFactory.create_tags_filter(value))
+            elif "__" in key:
                 field, op = key.split("__", 1)
                 self._add_operator_filter(field, op, value)
             else:

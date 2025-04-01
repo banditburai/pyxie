@@ -1,89 +1,3 @@
-def test_layout_inheritance():
-    """Test that layouts can properly handle content through slots."""
-    from pyxie.layouts import layout, get_layout
-    from fastcore.xml import Html, Head, Body, Title, Div, H1, to_xml
-    
-    # Create a base layout
-    @layout("base")
-    def base_layout(title="Default Title", metadata=None):
-        """Base layout with title and content slot."""
-        return Html(
-            Head(
-                Title(title)
-            ),
-            Body(
-                Div(
-                    # Main content slot
-                    Div(None, data_slot="content", cls="content-container"),
-                    cls="max-w-3xl mx-auto px-4 py-8"
-                )
-            )
-        )
-    
-    # Create an article layout
-    @layout("article")
-    def article_layout(title="Article", metadata=None):
-        """Article layout with its own structure and slots."""
-        return Html(
-            Head(
-                Title(title)
-            ),
-            Body(
-                Div(
-                    # Article header
-                    Div(
-                        H1(title, cls="text-4xl font-bold mb-6"),
-                        Div(
-                            f"By {metadata.get('author', 'Anonymous')}" if metadata and metadata.get('author') else None,
-                            cls="text-base-content/70 mb-8"
-                        ) if metadata and metadata.get('author') else None,
-                        cls="article-header"
-                    ),
-                    # Main content slot
-                    Div(None, data_slot="content", cls="prose dark:prose-invert max-w-none"),
-                    # Additional content slot
-                    Div(None, data_slot="article_content", cls="mt-8"),
-                    cls="max-w-3xl mx-auto px-4 py-8"
-                )
-            )
-        )
-    
-    # Test retrieving the article layout
-    article = get_layout("article")
-    assert article is not None
-    
-    # Test rendering the article layout with metadata and content
-    metadata = {"author": "Test Author"}
-    
-    # Create slots with proper content structure - using HTML content
-    slots = {
-        "content": "<div>This is the article content.</div>",
-        "article_content": "<div>This is article-specific content.</div>"
-    }
-    
-    result = article.create(
-        title="Test Article",
-        metadata=metadata,
-        slots=slots
-    )
-    
-    print("\nActual output:")
-    print(result)
-    
-    # Verify the layout worked correctly
-    assert "Test Article" in result  # Check title is in the result
-    assert "By Test Author" in result  # Check author is in the result
-    assert "article-header" in result  # Check the header class is in the result
-    
-    # Check that all required classes are present (in any order)
-    content_classes = {"prose", "dark:prose-invert", "max-w-none"}
-    # Find the div with the content by looking for the content text
-    content_div = result.split('This is the article content.')[0].split('class="')[-1].split('"')[0]
-    result_classes = set(content_div.split())
-    assert content_classes.issubset(result_classes), f"Missing classes. Expected {content_classes}, got {result_classes}"
-    
-    assert "mt-8" in result  # Check the article-specific class is in the result
-
 def test_layout_composition():
     """Test composing layouts from reusable components."""
     from pyxie.layouts import layout, get_layout
@@ -227,4 +141,84 @@ def test_layout_name_attribute():
     # Verify the layout was registered
     registered_layout = get_layout("test_attr")
     assert registered_layout is not None
-    assert registered_layout.name == "test_attr" 
+    assert registered_layout.name == "test_attr"
+
+def test_layout_independence():
+    """Test that layouts are independent and handle their own content through slots."""
+    from pyxie.layouts import layout, get_layout
+    from fastcore.xml import Div, H1, to_xml
+    
+    # Create a base layout
+    @layout("base")
+    def base_layout(title="Default Title", metadata=None, slots=None):
+        """Base layout with title and content slot."""
+        return Div(
+            # Main content slot
+            Div(None, data_slot="content", cls="content-container"),
+            cls="max-w-3xl mx-auto px-4 py-8"
+        )
+    
+    # Create an article layout
+    @layout("article")
+    def article_layout(title="Article", metadata=None, slots=None):
+        """Article layout with its own structure and slots."""
+        return Div(
+            # Article header
+            Div(
+                H1(title, cls="text-4xl font-bold mb-6"),
+                Div(
+                    f"By {metadata.get('author', 'Anonymous')}" if metadata and metadata.get('author') else None,
+                    cls="text-base-content/70 mb-8"
+                ) if metadata and metadata.get('author') else None,
+                cls="article-header"
+            ),
+            # Main content slot
+            Div(None, data_slot="content", cls="prose dark:prose-invert max-w-none"),
+            # Additional content slot
+            Div(None, data_slot="article_content", cls="mt-8"),
+            cls="max-w-3xl mx-auto px-4 py-8"
+        )
+    
+    # Test retrieving the article layout
+    article = get_layout("article")
+    assert article is not None
+    
+    # Test rendering the article layout with metadata and content
+    metadata = {"author": "Test Author"}
+    
+    # Create slots with proper content structure - using HTML content
+    slots = {
+        "content": "<div>This is the article content.</div>",
+        "article_content": "<div>This is article-specific content.</div>"
+    }
+    
+    result = article.create(
+        title="Test Article",
+        metadata=metadata,
+        slots=slots
+    )
+    
+    print("\nActual output:")
+    print(result)
+    
+    # Verify the layout worked correctly
+    assert "Test Article" in result  # Check title is in the result
+    assert "By Test Author" in result  # Check author is in the result
+    assert "article-header" in result  # Check the header class is in the result
+    
+    # Check that the content slot has the correct classes
+    content_classes = {"prose", "dark:prose-invert", "max-w-none"}
+    # Find the div with data-slot="content" and check its classes
+    content_div = result.split('data-slot="content"')[1].split('class="')[1].split('"')[0]
+    result_classes = set(content_div.split())
+    assert content_classes.issubset(result_classes), f"Content slot missing classes. Expected {content_classes}, got {result_classes}"
+    
+    # Check that the article-specific slot has its class
+    article_content_div = result.split('data-slot="article_content"')[1].split('class="')[1].split('"')[0]
+    assert "mt-8" in article_content_div  # Check the article-specific class is in the result
+    
+    # Verify the base layout is independent
+    base = get_layout("base")
+    base_result = base.create(title="Base Test", slots={"content": "<div>Base content</div>"})
+    assert "content-container" in base_result  # Base layout has its own class
+    assert "prose" not in base_result  # Base layout doesn't have article classes 

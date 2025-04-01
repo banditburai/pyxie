@@ -19,6 +19,8 @@ import asyncio
 from pathlib import Path
 from typing import Dict, Optional, Any, Tuple, List, TypeVar, cast
 from collections import Counter
+import os
+import pathlib
 
 from .constants import DEFAULT_METADATA
 from .types import ContentItem, PathLike
@@ -77,12 +79,13 @@ class Pyxie:
             
         if reload:
             try:
-                if asyncio.get_event_loop().is_running():
-                    asyncio.create_task(self.start_watching())
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    self._watcher_task = asyncio.create_task(self.start_watching())
                 else:
                     log(logger, "Pyxie", "warning", "init", "Event loop not running, skipping auto-start of watcher")
-            except ImportError:
-                log(logger, "Pyxie", "warning", "init", "asyncio not installed, skipping auto-start of watcher")
+            except (RuntimeError, ImportError) as e:
+                log(logger, "Pyxie", "warning", "init", f"Could not start watcher: {str(e)}")
     
     @property
     def collections(self) -> List[str]:
@@ -96,8 +99,14 @@ class Pyxie:
     
     @property
     def collection_stats(self) -> Dict[str, int]:
-        """Get item count per collection."""
-        return {name: len(collection._items) for name, collection in self._collections.items()}
+        """Return a dictionary of collection names and their item counts."""
+        stats = {}
+        for name, collection in self._collections.items():
+            try:
+                stats[name] = len(collection._items) if collection._items is not None else 0
+            except (AttributeError, TypeError):
+                stats[name] = 0
+        return stats
     
     def add_collection(
         self,
@@ -345,9 +354,6 @@ class Pyxie:
         # Touch a Python file to trigger FastHTML's reload
         if self.reload:
             try:
-                import os
-                import pathlib
-                # Touch the main.py file to trigger reload
                 main_file = pathlib.Path(os.path.dirname(__file__)) / "__init__.py"
                 if main_file.exists():
                     os.utime(main_file, None)

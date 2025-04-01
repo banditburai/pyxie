@@ -1,14 +1,18 @@
 """Tests for the quick start guide content."""
 
 import pytest
+import logging
 from pathlib import Path
-from mistletoe.block_token import add_token
-from pyxie.parser import parse_frontmatter, FastHTMLToken, ScriptToken
+from mistletoe import Document
+from mistletoe.block_token import Heading, Paragraph, List, HtmlBlock
+from pyxie.renderer import PyxieRenderer
+from pyxie.parser import RawBlockToken, NestedContentToken, parse_frontmatter
 from pyxie.types import ContentItem
 from pyxie.renderer import render_content
 from pyxie.layouts import layout
 from fasthtml.common import *
 
+logger = logging.getLogger(__name__)
 
 # Test content with various sections
 QUICK_START_CONTENT = """---

@@ -12,6 +12,9 @@ def test_rebuild_content(tmp_path):
     
     # Initialize Pyxie
     pyxie = Pyxie(content_dir=content_dir)
+    assert "content" in pyxie.collections
+    collection = pyxie._collections["content"]
+    assert collection.path == content_dir
     
     # Initial content check
     assert len(pyxie.get_items().items) == 1

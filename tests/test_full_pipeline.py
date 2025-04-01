@@ -1,13 +1,24 @@
-"""Test the full rendering pipeline."""
+"""Test the complete rendering pipeline including layout handling and slot filling."""
 
-import pytest
-from src.pyxie.types import ContentItem
-from src.pyxie.renderer import render_content
-from src.pyxie.layouts import layout
-from src.pyxie.parser import custom_tokenize_block, FastHTMLToken, ScriptToken, NestedContentToken
-from mistletoe import Document
-from fastcore.xml import Div
+import re
+import yaml
+from typing import Dict, List, Set, Tuple, Any
+from mistletoe import Document, HtmlRenderer
+from mistletoe.block_token import BlockToken
+from mistletoe.span_token import tokenize_inner
+from mistletoe.block_tokenizer import tokenize_block
+from lxml import html
+from pathlib import Path
 from textwrap import dedent
+from fasthtml.common import *
+
+# Import our actual implementations
+from src.pyxie.fasthtml import execute_fasthtml
+from src.pyxie.types import ContentItem
+from src.pyxie.layouts import get_layout, layout
+from src.pyxie.slots import process_layout, CONDITION_ATTR
+from src.pyxie.parser import RawBlockToken, NestedContentToken
+from src.pyxie.renderer import render_content
 
 # Test layout
 @layout("test")
@@ -18,7 +29,7 @@ def _test_page_layout(metadata):
         Div(
             Div(
                 Div(title, cls="title"),
-                Div(None, data_slot="content"),
+                Div(None, data_slot="main_content"),
                 cls="content"
             ),
             cls="content"
@@ -30,6 +41,7 @@ def test_full_pipeline():
     """Test the full rendering pipeline."""
     # Test content with nested markdown - using dedent to handle indentation
     content = dedent("""
+        <main_content>
         # Welcome to Pyxie
 
         This is a test of the full pipeline.
@@ -49,6 +61,7 @@ def test_full_pipeline():
         <script>
         console.log("Test script");
         </script>
+        </main_content>
     """).strip()
     
     # Create a content item
@@ -63,8 +76,7 @@ def test_full_pipeline():
     
     # Debug tokenization
     print("\nDEBUG: Tokenization:")
-    doc = Document('')
-    doc.children = list(custom_tokenize_block(item.content, [FastHTMLToken, ScriptToken, NestedContentToken]))
+    doc = Document(content)
     for token in doc.children:
         print(f"\nToken type: {type(token).__name__}")
         if isinstance(token, NestedContentToken):
@@ -92,11 +104,11 @@ def test_full_pipeline():
     assert "Welcome to Pyxie" in result
     assert "This is a test of the full pipeline" in result
     
-    # Check custom block rendering - tags should be preserved
-    assert "<custom>" in result
-    assert "<nested>" in result
-    assert "<strong>bold</strong>" in result
-    assert "<em>italic</em>" in result
+    # Check custom block rendering - tags should be preserved with data-slot
+    assert '<custom data-slot="custom">' in result
+    assert '<nested data-slot="nested">' in result
+    assert '<strong>bold</strong>' in result
+    assert '<em>italic</em>' in result
     assert '<a href="https://example.com">link</a>' in result
     
     # Check FastHTML block

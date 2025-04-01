@@ -24,21 +24,21 @@ post-rendering based on convention (non-standard/raw tags).
 import re
 import yaml
 import logging
-import html
-from typing import Dict, List, Any, Tuple, Optional, Type, ClassVar, Iterator
+from typing import Dict, Any, Tuple, Optional, ClassVar
 
 # Mistletoe imports
-from mistletoe import Document
 from mistletoe import block_tokenizer  # Access the core tokenizer
 from mistletoe import block_token      # Access the default list of block tokens (_token_types)
 from mistletoe.block_token import BlockToken
 from mistletoe.block_tokenizer import FileWrapper
 
+from .constants import STANDARD_HTML_TAGS
+
 logger = logging.getLogger(__name__)
 
 # --- Constants ---
 
-RAW_BLOCK_TAGS: set[str] = {'script', 'style', 'pre', 'fasthtml', 'ft'}
+RAW_BLOCK_TAGS: set[str] = {'script', 'style', 'fasthtml', 'ft'}
 
 VOID_ELEMENTS: set[str] = {
     'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
@@ -78,8 +78,13 @@ def _parse_attrs_str(attrs_str: Optional[str]) -> Dict[str, Any]:
 
 # --- Frontmatter Parsing ---
 
-def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
-    """Parses YAML frontmatter from the beginning of the content string."""
+def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Parses YAML frontmatter from the beginning of the content string.
+    
+    Returns:
+        A tuple of (metadata, content). If there's an error parsing the YAML,
+        returns (None, None) to indicate the file should be skipped.
+    """
     if not content.strip().startswith('---'):
         return {}, content
     match = FRONTMATTER_PATTERN.match(content)
@@ -98,14 +103,14 @@ def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
         if metadata is None: metadata = {}
         if not isinstance(metadata, dict):
             logger.warning("Frontmatter is not a dictionary (type: %s). Treating as empty.", type(metadata).__name__)
-            return {}, content # Return original content on structure error
+            return None, None # Return None to skip file on structure error
         return metadata, remaining_content
     except yaml.YAMLError as e:
         logger.warning("Failed to parse YAML frontmatter: %s. Skipping.", e)
-        return {}, content # Return original on YAML error
+        return None, None # Return None to skip file on YAML error
     except Exception as e:
         logger.warning("Unexpected error parsing frontmatter: %s. Skipping.", e)
-        return {}, content
+        return None, None # Return None to skip file on any error
 
 # --- Custom Block Token Definitions ---
 
@@ -155,6 +160,11 @@ class BaseCustomMistletoeBlock(BlockToken):
     def _is_tag_match(cls, tag_name: str) -> bool:
         raise NotImplementedError("Subclasses must implement _is_tag_match")
 
+    @staticmethod
+    def is_self_closing(tag_name: str, open_match: re.Match) -> bool:
+        """Check if a tag is self-closing based on explicit /> or being a void element."""
+        return bool(open_match.group(3)) or tag_name in VOID_ELEMENTS
+
     @classmethod
     def read(cls, lines: FileWrapper) -> Optional[Dict]:
         """Reads the custom block, handling nesting, raw content, and same-line close."""
@@ -168,8 +178,8 @@ class BaseCustomMistletoeBlock(BlockToken):
         attrs_str = open_match.group(2)
         attrs = _parse_attrs_str(attrs_str)
         
-        # Handle self-closing tags (either explicit /> or known void elements)
-        if bool(open_match.group(3)) or tag_name in VOID_ELEMENTS:
+        # early return for self-closing tags
+        if cls.is_self_closing(tag_name, open_match):
             return {"tag_name": tag_name, "attrs": attrs, "content": "", "is_self_closing": True}
 
         # --- Check for closing tag on the SAME line ---
@@ -206,7 +216,7 @@ class BaseCustomMistletoeBlock(BlockToken):
                     nested_open_match = cls._OPEN_TAG_PATTERN.match(consumed_line)
                     if nested_open_match and nested_open_match.group(1).lower() == tag_name:
                         # Only increase nesting level if it's not a self-closing tag
-                        if not (bool(nested_open_match.group(3)) or tag_name in VOID_ELEMENTS):
+                        if not cls.is_self_closing(tag_name, nested_open_match):
                             nesting_level += 1
             except StopIteration: break # EOF
 
@@ -231,20 +241,7 @@ class NestedContentToken(BaseCustomMistletoeBlock):
     def _is_tag_match(cls, tag_name: str) -> bool:
         """Matches any tag not handled by RawBlockToken."""
         # Only match custom tags (not standard HTML tags)
-        is_match = tag_name not in RAW_BLOCK_TAGS and not tag_name in {
-            'div', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li',
-            'table', 'tr', 'td', 'th', 'thead', 'tbody', 'tfoot', 'form', 'input',
-            'button', 'select', 'option', 'textarea', 'label', 'fieldset', 'legend',
-            'dl', 'dt', 'dd', 'nav', 'header', 'footer', 'main', 'article', 'section',
-            'aside', 'figure', 'figcaption', 'time', 'mark', 'ruby', 'rt', 'rp',
-            'bdi', 'bdo', 'wbr', 'canvas', 'svg', 'math', 'video', 'audio', 'source',
-            'track', 'embed', 'object', 'param', 'iframe', 'picture', 'source',
-            'img', 'map', 'area', 'table', 'caption', 'colgroup', 'col', 'thead',
-            'tbody', 'tfoot', 'tr', 'td', 'th', 'form', 'input', 'button', 'select',
-            'option', 'optgroup', 'datalist',
-            'output', 'progress', 'meter', 'details', 'summary', 'dialog', 'menu',
-            'menuitem', 'slot', 'template', 'portal'
-        }
+        is_match = tag_name not in RAW_BLOCK_TAGS and not tag_name in STANDARD_HTML_TAGS
         return is_match
 
 

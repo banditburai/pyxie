@@ -3,17 +3,17 @@
 import pytest
 from textwrap import dedent
 from fastcore.xml import FT, XML, Div
-from pyxie.fasthtml import render_fasthtml, FastHTMLRenderer, FastHTMLExecutor, PyxieXML
+from pyxie.fasthtml import execute_fasthtml, FastHTMLRenderer, FastHTMLExecutor, PyxieXML
 
 def test_simple_div():
     """Test rendering a simple div."""
-    result = render_fasthtml('show(Div("Hello World"))')
+    result = execute_fasthtml('show(Div("Hello World"))')
     assert result.content == '<div>Hello World</div>'
     assert not result.error
 
 def test_div_with_class():
     """Test rendering a div with a class attribute."""
-    result = render_fasthtml('show(Div("Hello World", cls="test-class"))')
+    result = execute_fasthtml('show(Div("Hello World", cls="test-class"))')
     assert result.content == '<div class="test-class">Hello World</div>'
     assert not result.error
 
@@ -26,7 +26,7 @@ def test_nested_components():
     )
     show(outer)
     """)
-    result = render_fasthtml(code)
+    result = execute_fasthtml(code)
     assert '<div class="outer">' in result.content
     assert '<div class="inner">Inner content</div>' in result.content
     assert not result.error
@@ -39,7 +39,7 @@ def test_component_function():
     
     show(MyComponent("Hello from function"))
     """)
-    result = render_fasthtml(code)
+    result = execute_fasthtml(code)
     assert result.content == '<div class="custom">Hello from function</div>'
     assert not result.error
 
@@ -49,14 +49,14 @@ def test_multiple_components():
     show(Div("First"))
     show(Div("Second", cls="second"))
     """)
-    result = render_fasthtml(code)
+    result = execute_fasthtml(code)
     assert '<div>First</div>' in result.content
     assert '<div class="second">Second</div>' in result.content
     assert not result.error
 
 def test_error_handling():
     """Test error handling in FastHTML rendering."""
-    result = render_fasthtml('show(undefined_variable)')
+    result = execute_fasthtml('show(undefined_variable)')
     assert result.error is not None
     assert 'undefined_variable' in result.error
 
@@ -68,7 +68,7 @@ def test_xml_object_rendering():
 
 def test_empty_content():
     """Test rendering empty content."""
-    result = render_fasthtml('')
+    result = execute_fasthtml('')
     assert result.content == ''
     assert not result.error
 

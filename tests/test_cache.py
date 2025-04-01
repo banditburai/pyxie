@@ -72,4 +72,83 @@ def test_invalidation(cache, test_file):
     # Invalidate all
     cache.store("test3", test_file, "<div>3</div>", template_name)
     assert cache.invalidate()
-    assert cache.get("test3", test_file, template_name) is None 
+    assert cache.get("test3", test_file, template_name) is None
+
+def test_cache_connection_error(tmp_path):
+    """Test handling of database connection errors."""
+    cache_dir = tmp_path / "cache"
+    cache = Cache(cache_dir)
+    
+    # Make the database read-only to force errors
+    (cache_dir / "cache.db").chmod(0o444)
+    
+    # Test store failure
+    result = cache.store("test", tmp_path / "test.md", "<p>test</p>", "default")
+    assert not result
+    
+    # Test get failure
+    result = cache.get("test", tmp_path / "test.md", "default")
+    assert result is None
+    
+    # Test invalidate failure
+    result = cache.invalidate("test")
+    assert not result
+
+def test_cache_hash_failure(tmp_path):
+    """Test handling of file hash failures."""
+    cache = Cache(tmp_path)
+    
+    # Test with non-existent file
+    result = cache.store("test", tmp_path / "nonexistent.md", "<p>test</p>", "default")
+    assert not result
+    
+    result = cache.get("test", tmp_path / "nonexistent.md", "default")
+    assert result is None
+
+def test_cache_template_invalidation(tmp_path):
+    """Test cache invalidation when template changes."""
+    cache = Cache(tmp_path)
+    test_file = tmp_path / "test.md"
+    test_file.write_text("test content")
+    
+    # Store with initial template
+    cache.store("test", test_file, "<p>test</p>", "template1")
+    
+    # Get with different template should return None
+    result = cache.get("test", test_file, "template2")
+    assert result is None
+
+def test_cache_source_invalidation(tmp_path):
+    """Test cache invalidation when source changes."""
+    cache = Cache(tmp_path)
+    test_file = tmp_path / "test.md"
+    test_file.write_text("initial content")
+    
+    # Store initial content
+    cache.store("test", test_file, "<p>initial</p>", "default")
+    
+    # Change file content
+    test_file.write_text("modified content")
+    
+    # Get should return None due to hash mismatch
+    result = cache.get("test", test_file, "default")
+    assert result is None
+
+def test_cache_selective_invalidation(tmp_path):
+    """Test selective cache invalidation."""
+    cache = Cache(tmp_path)
+    file1 = tmp_path / "test1.md"
+    file2 = tmp_path / "test2.md"
+    file1.write_text("test1")
+    file2.write_text("test2")
+    
+    # Store both files
+    cache.store("test", file1, "<p>test1</p>", "default")
+    cache.store("test", file2, "<p>test2</p>", "default")
+    
+    # Invalidate only file1
+    cache.invalidate("test", file1)
+    
+    # file1 should be invalidated but file2 should still be cached
+    assert cache.get("test", file1, "default") is None
+    assert cache.get("test", file2, "default") is not None 

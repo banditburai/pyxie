@@ -37,24 +37,32 @@ DEFAULT_METADATA = {
     "image_height": 600
 }
 
-# Content types
-ContentType = Literal["markdown", "ft", "raw", "latex", "fasthtml"]
-VALID_CONTENT_TYPES = {"markdown", "ft", "raw", "latex", "fasthtml"}
-
-# Block names
-FASTHTML_BLOCK_NAMES = frozenset({'ft', 'fasthtml'})
-
-# HTML tags
-SELF_CLOSING_TAGS = frozenset({
-    'img', 'br', 'hr', 'input', 'meta', 'link', 'area', 'base', 'col', 
-    'embed', 'param', 'source', 'track', 'wbr'
-})
-
-PYXIE_SHOW_ATTR = "pyxie-show"
-
-class RequiredMetadata(Enum):
-    """Required metadata fields."""
-    TITLE = auto()
-    LAYOUT = auto()
-    DATE = auto()
-    AUTHOR = auto() 
+# HTML tags that should not be treated as custom blocks
+STANDARD_HTML_TAGS = {
+    # Basic text elements
+    'div', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'pre', 'code',
+    
+    # Lists
+    'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+    
+    # Tables
+    'table', 'caption', 'colgroup', 'col', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th',
+    
+    # Forms
+    'form', 'input', 'button', 'select', 'option', 'optgroup', 'datalist',
+    'textarea', 'label', 'fieldset', 'legend', 'output',
+    
+    # Media
+    'img', 'picture', 'source', 'video', 'audio', 'track', 'embed', 'object', 'param',
+    'iframe', 'canvas', 'svg', 'math',
+    
+    # Layout
+    'nav', 'header', 'footer', 'main', 'article', 'section', 'aside',
+    
+    # Interactive
+    'details', 'summary', 'dialog', 'menu', 'menuitem', 'progress', 'meter',
+    
+    # Other
+    'figure', 'figcaption', 'time', 'mark', 'ruby', 'rt', 'rp',
+    'bdi', 'bdo', 'wbr', 'slot', 'template', 'portal'
+}

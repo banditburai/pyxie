@@ -51,10 +51,16 @@ class ContentItem:
 
     def __post_init__(self):
         """Add metadata keys as attributes for easy access."""
+        # Ensure source_path is a Path object
+        if not isinstance(self.source_path, Path):
+            self.source_path = Path(str(self.source_path))
+            
         if "title" not in self.metadata and "slug" not in self.metadata:
-            # Get the stem from source_path if it's a Path, otherwise use the string
-            stem = self.source_path.stem if isinstance(self.source_path, Path) else str(self.source_path)
-            self.metadata["title"] = stem.replace("-", " ").title()
+            # Get the stem from source_path (now guaranteed to be a Path)
+            title = self.source_path.stem
+            # Replace both hyphens and underscores with spaces
+            title = title.replace("-", " ").replace("_", " ")
+            self.metadata["title"] = title.title()
     
     def __getattr__(self, name: str) -> Any:
         """Allow accessing metadata as attributes."""

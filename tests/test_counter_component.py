@@ -6,10 +6,18 @@ import pytest
 from pathlib import Path
 from pyxie.renderer import render_content
 from pyxie.types import ContentItem
+from pyxie.layouts import layout
+from fasthtml.common import *
+
+@layout("default")
+def default_layout() -> FT:
+    """Default layout that just renders the content directly."""
+    return Div(data_slot="main_content")
 
 def test_counter_component_in_code_block():
     """Test that counter component example in code blocks is properly escaped."""
     markdown = """
+<main_content>
 # 3. Interactive Components
 
 Here's a simple counter component:
@@ -43,6 +51,7 @@ Use show() to render the counter component
 ```python
 show(Counter(5))
 ```
+</main_content>
     """
     
     # Create content item
@@ -71,16 +80,18 @@ def test_counter_component_outside_code_block():
     """Test that counter component outside code blocks is executed."""
     # Note: Since we don't have the actual components module, we'll use a simplified version
     markdown = """
+<main_content>
 # Test Counter Component
 
 Here's a regular FastHTML component:
 
 <ft>
 def Counter(initial=5):
-    return f"<div class='counter'>Count: {initial}</div>"
+    return f'<div class="counter">Count: {initial}</div>'
 
 show(Counter())
 </ft>
+</main_content>
     """
     
     # Create content item
@@ -94,7 +105,7 @@ show(Counter())
     html = render_content(item)
     
     # Check that the component was executed
-    assert "<div class='counter'>Count: 5</div>" in html
+    assert '<div class="counter">Count: 5</div>' in html
     
     # Make sure the original source code is not in the output
     assert "def Counter" not in html

@@ -84,7 +84,16 @@ def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = 
     
     # If no layout is specified, use the default layout
     if default_layout := get_layout("default"):
-        return LayoutResult(html=default_layout.create())
+        sig = inspect.signature(default_layout.func)
+        params = list(sig.parameters.values())
+        
+        # If the layout function expects a single 'metadata' parameter, pass the entire metadata dict
+        if len(params) == 1 and params[0].name == 'metadata':
+            return LayoutResult(html=default_layout.create(metadata=item.metadata))
+            
+        # Otherwise, filter metadata to match the function's parameters
+        metadata = {k: v for k, v in item.metadata.items() if k != "layout" and k in sig.parameters}
+        return LayoutResult(html=default_layout.create(**metadata))
     
     # If no default layout exists, return empty string
     return LayoutResult(html="")

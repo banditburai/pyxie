@@ -29,7 +29,7 @@ from mistletoe.latex_token import Math
 # Local Pyxie imports
 from .errors import log, format_error_html, PyxieError
 from .types import ContentItem, RenderResult
-from .layouts import handle_cache_and_layout, LayoutResult
+from .layouts import handle_cache_and_layout, LayoutResult, LayoutNotFoundError
 from .fasthtml import execute_fasthtml
 from .slots import process_layout
 from .parser import (
@@ -51,15 +51,16 @@ class PyxieRenderer(HTMLRenderer):
     def __init__(self, *extras: Type[Union[BlockToken, SpanToken]]):
         # Known custom tokens this renderer handles
         known_custom_tokens = [RawBlockToken, NestedContentToken, Math]
-        unique_tokens = list(dict.fromkeys(list(extras) + known_custom_tokens))
+        # Only register tokens that we know how to handle
+        valid_tokens = [token for token in extras if hasattr(self, self._cls_to_func(token.__name__))]
+        unique_tokens = list(dict.fromkeys(valid_tokens + known_custom_tokens))
         super().__init__(*unique_tokens)
         self._used_ids: Set[str] = set() # For unique heading IDs
 
-        # Check for missing render methods
-        for token_cls in unique_tokens:
-            render_func_name = self._cls_to_func(token_cls.__name__)
-            if not hasattr(self, render_func_name):
-                logger.warning(f"Render function '{render_func_name}' not found for token '{token_cls.__name__}'.")
+        # Log warnings for unknown tokens
+        for token in extras:
+            if token not in unique_tokens:
+                logger.warning(f"Token '{token.__name__}' not registered - no render method found.")
 
     def render_math(self, token: Math) -> str:
         """Render math tokens using KaTeX.
@@ -213,7 +214,7 @@ def render_content(
     file_path = getattr(item, 'source_path', None)
     log(logger, module_name, "info", operation_name, f"Starting for item: {file_path or 'N/A'}", file_path=file_path)
 
-    try:
+    try:        
         # 1. Get Layout HTML
         log(logger, module_name, "debug", operation_name, "Fetching layout...", file_path=file_path)
         layout_result: LayoutResult = handle_cache_and_layout(item)
@@ -221,7 +222,7 @@ def render_content(
             return format_error_html(layout_result.error, "Layout Loading")
         layout_html = layout_result.html
         if not layout_html:             
-             return format_error_html("Layout HTML is empty", "Layout Loading")
+            return format_error_html("Layout 'default' not found", "Layout Loading")
         log(logger, module_name, "debug", operation_name, "Layout HTML obtained.", file_path=file_path)
 
         # 2. Prepare Content & Render Fragment
@@ -255,6 +256,9 @@ def render_content(
         log(logger, module_name, "info", operation_name, "Layout processing completed.", file_path=file_path)
         return final_html_fragment
 
+    except LayoutNotFoundError as e:
+        logger.error("Layout not found", exc_info=True)
+        return format_error_html(str(e), "Layout Loading")
     except PyxieError as pe:
         logger.error("PyxieError during layout processing", exc_info=True)
         return format_error_html(pe, "Layout Processing")

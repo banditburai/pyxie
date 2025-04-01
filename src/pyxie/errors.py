@@ -74,6 +74,9 @@ class CollectionError(PyxieError):
 class LayoutError(PyxieError):
     """Error in layout operations."""
 
+class SlotError(PyxieError):
+    """Error in slot operations."""
+
 class ContentError(PyxieError):
     """Error in content operations."""
 

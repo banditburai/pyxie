@@ -75,6 +75,11 @@ class Cache:
         with self._connect() as conn:
             conn.executescript(SCHEMA)
     
+    @property
+    def cache_dir(self) -> Path:
+        """Get the cache directory path."""
+        return self.db_path.parent
+    
     @contextmanager
     def _connect(self):
         """Create a database connection with proper configuration."""

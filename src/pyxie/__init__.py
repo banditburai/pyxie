@@ -39,7 +39,7 @@ def _get_html(self):
     try:
         return render_content(self)
     except Exception as e:
-        return f"<div>Error: {e}</div>"
+        return f"Error: {e}"
 
 def _render_for_fasthtml(self):
     from fasthtml.common import NotStr

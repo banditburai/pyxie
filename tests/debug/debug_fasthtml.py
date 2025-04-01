@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from pyxie.fasthtml import render_fasthtml, FastHTMLExecutor
+from pyxie.fasthtml import execute_fasthtml, FastHTMLExecutor
 from pyxie.types import ContentItem
 from pyxie.renderer import render_content
 from pyxie.layouts import layout, registry
@@ -40,7 +40,7 @@ def debug_render_fasthtml(content: str, context_path: Path = None):
     print("Input content:")
     print(content)
     print("\nTrying to render:")
-    result = render_fasthtml(content, context_path)
+    result = execute_fasthtml(content, context_path)
     print("\nResult:")
     print("Success:", result.success)
     print("Content:", result.content)

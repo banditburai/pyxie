@@ -11,7 +11,7 @@ from lxml import html
 from pathlib import Path
 
 # Import our actual implementations
-from src.pyxie.fasthtml import render_fasthtml
+from src.pyxie.fasthtml import execute_fasthtml
 from src.pyxie.types import ContentItem
 from src.pyxie.layouts import get_layout
 from src.pyxie.slots import fill_slots
@@ -366,7 +366,7 @@ class NestedRenderer(HtmlRenderer):
                 attrs_str = ' ' + attrs_str
             
             # Render FastHTML content
-            result = render_fasthtml(token.content)
+            result = execute_fasthtml(token.content)
             if result.error:
                 return f'<div class="error">Error: {result.error}</div>'
             elif result.content:
