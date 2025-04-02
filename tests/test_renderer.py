@@ -778,8 +778,8 @@ throw new Error("Test script error");
         source_path="test.md"
     )
     result = render_content(error_layout_item)
-    assert "UNEXPECTED ERROR" in result
-    assert "LayoutValidationError" in result
+    # assert "UNEXPECTED ERROR" in result
+    assert "ERROR: LAYOUT PROCESSING: LayoutValidationError" in result
     assert "must return a FastHTML component or HTML string" in result
 
     # Register a valid test layout

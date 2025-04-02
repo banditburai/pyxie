@@ -37,15 +37,14 @@ Example:
 """
 
 import logging
-from typing import Any, Callable, Dict, Optional, Protocol, List, Set, Tuple
+from typing import Any, Callable, Dict, Optional, Protocol, List
 from os import PathLike
 from dataclasses import dataclass, field
 from pathlib import Path
 import importlib
 import inspect
-from lxml import html
 from fastcore.xml import FT, to_xml
-from .errors import log
+from .errors import log, log_errors, LayoutError, LayoutNotFoundError, LayoutValidationError
 from .types import ContentItem
 from .cache import CacheProtocol
 
@@ -57,6 +56,19 @@ class LayoutResult:
     html: str
     error: Optional[str] = None
 
+def _apply_layout(layout, metadata):
+    """Helper function to apply a layout with appropriate parameters."""
+    sig = inspect.signature(layout.func)
+    params = list(sig.parameters.values())
+    
+    # If the layout function expects a single 'metadata' parameter, pass the entire metadata dict
+    if len(params) == 1 and params[0].name == 'metadata':
+        return layout.create(metadata=metadata)
+        
+    # Otherwise, filter metadata to match the function's parameters
+    filtered_metadata = {k: v for k, v in metadata.items() if k != "layout" and k in sig.parameters}
+    return layout.create(**filtered_metadata)
+
 def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = None) -> LayoutResult:
     """Handle caching and layout resolution in one step."""
     collection = item.collection or "content"
@@ -66,16 +78,7 @@ def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = 
         return LayoutResult(html=cached)
     
     if layout_name and (layout := get_layout(layout_name)):
-        sig = inspect.signature(layout.func)
-        params = list(sig.parameters.values())
-        
-        # If the layout function expects a single 'metadata' parameter, pass the entire metadata dict
-        if len(params) == 1 and params[0].name == 'metadata':
-            return LayoutResult(html=layout.create(metadata=item.metadata))
-            
-        # Otherwise, filter metadata to match the function's parameters
-        metadata = {k: v for k, v in item.metadata.items() if k != "layout" and k in sig.parameters}
-        return LayoutResult(html=layout.create(**metadata))
+        return LayoutResult(html=_apply_layout(layout, item.metadata))
     
     if layout_name:
         error_msg = f"Layout '{layout_name}' not found"
@@ -84,40 +87,10 @@ def handle_cache_and_layout(item: ContentItem, cache: Optional[CacheProtocol] = 
     
     # If no layout is specified, use the default layout
     if default_layout := get_layout("default"):
-        sig = inspect.signature(default_layout.func)
-        params = list(sig.parameters.values())
-        
-        # If the layout function expects a single 'metadata' parameter, pass the entire metadata dict
-        if len(params) == 1 and params[0].name == 'metadata':
-            return LayoutResult(html=default_layout.create(metadata=item.metadata))
-            
-        # Otherwise, filter metadata to match the function's parameters
-        metadata = {k: v for k, v in item.metadata.items() if k != "layout" and k in sig.parameters}
-        return LayoutResult(html=default_layout.create(**metadata))
+        return LayoutResult(html=_apply_layout(default_layout, item.metadata))
     
     # If no default layout exists, return empty string
     return LayoutResult(html="")
-
-class LayoutError(Exception):
-    """Base class for layout-related errors."""
-
-class LayoutNotFoundError(LayoutError):
-    """Raised when a layout is not found."""
-
-class LayoutValidationError(LayoutError):
-    """Raised when a layout is invalid."""
-
-def log_errors(logger: logging.Logger, component: str, action: str) -> Callable:
-    """Decorator to log errors and re-raise."""
-    def decorator(func: Callable) -> Callable:
-        def wrapper(*args, **kwargs) -> Any:
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                log(logger, component, "error", action, str(e))
-                raise
-        return wrapper
-    return decorator
 
 class LayoutFunction(Protocol):
     """Protocol defining a layout function signature."""

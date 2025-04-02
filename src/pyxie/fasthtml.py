@@ -22,7 +22,7 @@ from fastcore.xml import FT
 import fasthtml.common as ft_common
 from .utilities import safe_import
 from .types import RenderResult
-from .errors import log
+from .errors import log, log_errors
 from .parser import VOID_ELEMENTS
 
 logger = logging.getLogger(__name__)
@@ -113,18 +113,16 @@ class FastHTMLExecutor:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.namespace = None
     
+    @log_errors(logger, "FastHTML", "execute")
     def execute(self, code: str) -> List[Any]:
         if self.namespace is None:
             self.namespace = create_namespace(self.context_path)
-        try:
-            process_imports(code, self.namespace, self.context_path)
-            self.namespace['__results__'] = []
-            self.namespace['__builtins__'] = globals()['__builtins__']
-            exec(code, self.namespace)
-            return self.namespace.get('__results__', [])
-        except Exception as e:
-            log(logger, "FastHTML", "error", "execute", f"Error executing FastHTML code: {str(e)}")
-            raise
+        
+        process_imports(code, self.namespace, self.context_path)
+        self.namespace['__results__'] = []
+        self.namespace['__builtins__'] = globals()['__builtins__']
+        exec(code, self.namespace)
+        return self.namespace.get('__results__', [])
 
 class FastHTMLRenderer:
     @classmethod
@@ -163,6 +161,7 @@ class FastHTMLRenderer:
         rendered_content = ' '.join(cls._render_component(c) for c in content)
         return f'<{tag}{attr_str}>{rendered_content}</{tag}>'
 
+@log_errors(logger, "FastHTML", "process")
 def execute_fasthtml(content: str, context_path: Optional[Path] = None) -> RenderResult:
     """Execute FastHTML code and return the rendered result.
     
@@ -172,14 +171,13 @@ def execute_fasthtml(content: str, context_path: Optional[Path] = None) -> Rende
     Returns:
         RenderResult containing the rendered HTML or any error
     """
-    if not content: return RenderResult()
-    try:
-        content = dedent(content.strip())
-        with FastHTMLExecutor(context_path) as executor:
-            try:
-                results = executor.execute(content)
-                return RenderResult(content=FastHTMLRenderer.to_xml(results))
-            except Exception as e:
-                return RenderResult(error=str(e))
-    except Exception as e:
-        return RenderResult(error=str(e))
+    if not content: 
+        return RenderResult()
+    
+    content = dedent(content.strip())
+    with FastHTMLExecutor(context_path) as executor:
+        try:
+            results = executor.execute(content)
+            return RenderResult(content=FastHTMLRenderer.to_xml(results))
+        except Exception as e:
+            return RenderResult(error=str(e))

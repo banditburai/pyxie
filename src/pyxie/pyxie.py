@@ -364,54 +364,54 @@ class Pyxie:
         """Start watching content directories for changes."""
         if not self.content_dir:
             return
-            
+        
         try:
             from watchfiles import awatch
-            
-            async def watch_content():
-                watcher = None
-                try:
-                    watcher = awatch(str(self.content_dir))
-                    async for changes in watcher:
-                        log(logger, "Pyxie", "info", "watch", f"Content changes detected: {changes}")
-                        self.rebuild_content()
-                except StopAsyncIteration:
-                    log(logger, "Pyxie", "info", "watch", "Watcher completed normally")
-                except asyncio.CancelledError:
-                    log(logger, "Pyxie", "info", "watch", "Watcher cancelled")
-                    raise  # Re-raise to properly handle cancellation
-                except Exception as e:
-                    log(logger, "Pyxie", "error", "watch", f"Error in content watcher: {e}")
-                finally:
-                    if watcher and hasattr(watcher, 'close'):
-                        try:
-                            await watcher.close()
-                        except Exception as e:
-                            log(logger, "Pyxie", "error", "watch", f"Error closing watcher: {e}")
-                    self._watcher_task = None
-                    if self.reload:  # Only restart if reload is True
-                        await self.start_watching()
-            
-            # Cancel existing task if any
-            if self._watcher_task:
-                self._watcher_task.cancel()
-                try:
-                    await asyncio.shield(self._watcher_task)
-                except asyncio.CancelledError:
-                    pass
-                self._watcher_task = None
-                
-            # Start new watcher task
-            self._watcher_task = asyncio.create_task(watch_content())
-            log(logger, "Pyxie", "info", "watch", "Content watching started")
-            
         except ImportError:
             log(logger, "Pyxie", "warning", "watch", "watchfiles not installed. Content watching disabled.")
+            return
+        
+        # Cancel existing task if any
+        await self._stop_watcher_task()
+        
+        # Start new watcher task
+        self._watcher_task = asyncio.create_task(self._run_watcher(awatch))
+        log(logger, "Pyxie", "info", "watch", "Content watching started")
+
+    async def _run_watcher(self, awatch_func) -> None:
+        """Run the file watcher loop."""
+        watcher = None
+        try:
+            watcher = awatch_func(str(self.content_dir))
+            async for changes in watcher:
+                log(logger, "Pyxie", "info", "watch", f"Content changes detected: {changes}")
+                self.rebuild_content()
+        except StopAsyncIteration:
+            log(logger, "Pyxie", "info", "watch", "Watcher completed normally")
+        except asyncio.CancelledError:
+            log(logger, "Pyxie", "info", "watch", "Watcher cancelled")
+            raise  # Re-raise to properly handle cancellation
         except Exception as e:
-            log(logger, "Pyxie", "error", "watch", f"Failed to start content watching: {e}")
-            
-    async def stop_watching(self) -> None:
-        """Stop watching content directories for changes."""
+            log(logger, "Pyxie", "error", "watch", f"Error in content watcher: {e}")
+        finally:
+            await self._cleanup_watcher(watcher)
+
+    async def _cleanup_watcher(self, watcher) -> None:
+        """Clean up watcher resources and handle restart if needed."""
+        # Close the watcher if it exists
+        if watcher and hasattr(watcher, 'close'):
+            try:
+                await watcher.close()
+            except Exception as e:
+                log(logger, "Pyxie", "error", "watch", f"Error closing watcher: {e}")
+        
+        # Reset state and restart if needed
+        self._watcher_task = None
+        if self.reload:  # Only restart if reload is True
+            await self.start_watching()
+
+    async def _stop_watcher_task(self) -> None:
+        """Stop the current watcher task."""
         if self._watcher_task:
             self._watcher_task.cancel()
             try:
@@ -419,7 +419,11 @@ class Pyxie:
             except asyncio.CancelledError:
                 pass
             self._watcher_task = None
-            log(logger, "Pyxie", "info", "watch", "Content watching stopped")
+
+    async def stop_watching(self) -> None:
+        """Stop watching content directories for changes."""
+        await self._stop_watcher_task()
+        log(logger, "Pyxie", "info", "watch", "Content watching stopped")
             
     async def check_content(self) -> None:
         """Check if content needs to be rebuilt."""

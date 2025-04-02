@@ -16,7 +16,7 @@
 
 import logging
 from pathlib import Path
-from typing import Optional, TypeVar, Union
+from typing import Optional, TypeVar, Union, Callable, Any
 
 T = TypeVar('T')
 
@@ -28,6 +28,38 @@ def log(logger_instance: logging.Logger, module: str, level: str, operation: str
         file_info = ""
     getattr(logger_instance, level)(f"[{module}] {operation}: {message}{file_info}")
 
+def log_errors(logger: logging.Logger, component: str, action: str) -> Callable:
+    """Decorator to log errors and re-raise.
+    
+    This decorator wraps a function to catch any exceptions, log them using
+    the standardized format, and then re-raise them to propagate up the call stack.
+    
+    Args:
+        logger: Logger instance to use for logging
+        component: Component name for log message
+        action: Action being performed for log message
+        
+    Returns:
+        Decorator function that preserves the original function's type hints
+        
+    Example:
+        ```python
+        @log_errors(logger, "Component", "action")
+        def some_function():
+            # Code that might raise an exception
+            pass
+        ```
+    """
+    def decorator(func: Callable) -> Callable:
+        def wrapper(*args, **kwargs) -> Any:
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                log(logger, component, "error", action, str(e))
+                raise
+        return wrapper
+    return decorator
+
 def format_error_html(error: Union[Exception, str], context: Optional[str] = None) -> str:
     """Format an error message as HTML for display.
     
@@ -35,7 +67,6 @@ def format_error_html(error: Union[Exception, str], context: Optional[str] = Non
         error: Either an Exception object or an error message string
         context: Optional context for the error (e.g., 'parsing', 'rendering')
     """
-    # Format the error message based on type
     if isinstance(error, Exception):
         error_message = f"{error.__class__.__name__}: {error}"
         if isinstance(error, SyntaxError):
@@ -43,11 +74,9 @@ def format_error_html(error: Union[Exception, str], context: Optional[str] = Non
     else:
         error_message = str(error)
     
-    # Add context if provided
     if context:
         error_message = f"{context.upper()}: {error_message}"
     
-    # Use a format that test assertions can detect even after HTML escaping
     return f'<div class="fasthtml-error">ERROR: {error_message}</div>'
 
 class PyxieError(Exception):
@@ -72,7 +101,13 @@ class CollectionError(PyxieError):
     """Error in collection operations."""
 
 class LayoutError(PyxieError):
-    """Error in layout operations."""
+    """Base class for layout-related errors."""
+
+class LayoutNotFoundError(LayoutError):
+    """Raised when a layout is not found."""
+
+class LayoutValidationError(LayoutError):
+    """Raised when a layout is invalid."""
 
 class SlotError(PyxieError):
     """Error in slot operations."""

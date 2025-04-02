@@ -50,20 +50,46 @@ def test_cache_invalidation_error_handling(temp_content_dir, temp_cache_dir, mon
     post = collection_dir / "test.md"
     post.write_text("""---
 title: Test Post
+slug: test-post
 ---
 Test content
 """)
 
-    # Test cache invalidation with IOError
-    def mock_invalidate(*args):
-        raise IOError("Test error")
-
-    monkeypatch.setattr(pyxie.cache, "invalidate", mock_invalidate)
+    # Force content reload to ensure test-post is loaded
+    pyxie.rebuild_content()
     
-    # Should log error but not raise
-    pyxie.invalidate_cache()
-    pyxie.invalidate_cache("blog")
-    pyxie.invalidate_cache("blog", "test")
+    # Test global cache invalidation with IOError
+    def mock_invalidate_global(*args):
+        if not args:  # Global invalidation (no args)
+            raise IOError("Test error")
+        return None
+
+    monkeypatch.setattr(pyxie.cache, "invalidate", mock_invalidate_global)
+    
+    # Error should be caught and logged, not raised
+    pyxie.invalidate_cache()  # Should not raise
+    
+    # Test collection cache invalidation with OSError
+    def mock_invalidate_collection(*args):
+        if len(args) == 1:  # Collection invalidation (one arg)
+            raise OSError("Test error")
+        return None
+
+    monkeypatch.setattr(pyxie.cache, "invalidate", mock_invalidate_collection)
+    
+    # Error should be caught and logged, not raised
+    pyxie.invalidate_cache(collection="blog")  # Should not raise
+    
+    # Test item cache invalidation with OSError (not ValueError)
+    def mock_invalidate_item(*args):
+        if len(args) >= 2:  # Item invalidation (two or more args)
+            raise OSError("Test error")
+        return None
+
+    monkeypatch.setattr(pyxie.cache, "invalidate", mock_invalidate_item)
+    
+    # Error should be caught and logged, not raised 
+    pyxie.invalidate_cache(collection="blog", slug="test-post")  # Should not raise
 
 def test_cache_interaction_with_content_items(temp_content_dir, temp_cache_dir):
     """Test how content items interact with cache."""

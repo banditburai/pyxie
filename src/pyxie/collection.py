@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Any, Iterator
 
 from .types import ContentItem, PathLike
 from .utilities import load_content_file, resolve_default_layout
-from .errors import CollectionError, log
+from .errors import log, log_errors
 
 logger = logging.getLogger(__name__)
 
@@ -71,22 +71,20 @@ class Collection:
         """Check if collection contains an item."""
         return slug in self._items
     
+    @log_errors(logger, "Collection", "load")
     def load(self) -> None:
         """Load content files from disk."""
-        try:
-            self.path.mkdir(parents=True, exist_ok=True)            
-            for file in self.path.glob("*.md"):
-                try:
-                    self._load_file(file)
-                except Exception as e:
-                    log(logger, "Collection", "error", "load", f"Failed to load {file}: {e}")
-                    continue
-            
-            log(logger, "Collection", "info", "load", f"Loaded {len(self)} items from collection '{self.name}'")
-            
-        except Exception as e:
-            raise CollectionError(f"Failed to load collection '{self.name}': {e}") from e
+        self.path.mkdir(parents=True, exist_ok=True)            
+        for file in self.path.glob("*.md"):
+            try:
+                self._load_file(file)
+            except Exception as e:
+                log(logger, "Collection", "error", "load", f"Failed to load {file}: {e}")
+                continue
+        
+        log(logger, "Collection", "info", "load", f"Loaded {len(self)} items from collection '{self.name}'")
     
+    @log_errors(logger, "Collection", "load_file")
     def _load_file(self, file: Path) -> None:
         """Load a single content file.
         
@@ -107,6 +105,7 @@ class Collection:
         """Get an item by slug."""
         return self._items.get(slug)
     
+    @log_errors(logger, "Collection", "get_items")
     def get_items(
         self,
         *,

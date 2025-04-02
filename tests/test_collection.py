@@ -244,12 +244,11 @@ def test_collection_load_fails_completely(monkeypatch):
     # Create a collection 
     collection = Collection(name="test", path="/nonexistent/path")
     
-    # Loading should raise a CollectionError
-    with pytest.raises(CollectionError) as excinfo:
+    # Loading should raise the original PermissionError since we're using @log_errors
+    with pytest.raises(PermissionError) as excinfo:
         collection.load()
     
-    # Check the error message contains the original exception info
-    assert "Failed to load collection 'test'" in str(excinfo.value)
+    # Check the error message
     assert "No permission to create directory" in str(excinfo.value)
 
 def test_collection_load_with_invalid_file(test_dir: Path, create_test_files: Dict[str, Path], caplog, mock_parse):

@@ -17,26 +17,24 @@
 import logging
 import html
 import re
-from typing import Dict, List, Any, Optional, Tuple, Type, Union, Set
+from typing import Dict, Any, Type, Union, Set
 
 # Mistletoe imports
 from mistletoe import Document
 from mistletoe.html_renderer import HTMLRenderer
 from mistletoe.block_token import BlockToken
-from mistletoe.span_token import SpanToken, RawText
+from mistletoe.span_token import SpanToken
 from mistletoe.latex_token import Math
 
 # Local Pyxie imports
 from .errors import log, format_error_html, PyxieError
-from .types import ContentItem, RenderResult
+from .types import ContentItem
 from .layouts import handle_cache_and_layout, LayoutResult, LayoutNotFoundError
 from .fasthtml import execute_fasthtml
 from .slots import process_layout
 from .parser import (
     RawBlockToken,
     NestedContentToken,
-    VOID_ELEMENTS,
-    RAW_BLOCK_TAGS,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,8 +54,7 @@ class PyxieRenderer(HTMLRenderer):
         unique_tokens = list(dict.fromkeys(valid_tokens + known_custom_tokens))
         super().__init__(*unique_tokens)
         self._used_ids: Set[str] = set() # For unique heading IDs
-
-        # Log warnings for unknown tokens
+        
         for token in extras:
             if token not in unique_tokens:
                 logger.warning(f"Token '{token.__name__}' not registered - no render method found.")
@@ -84,8 +81,7 @@ class PyxieRenderer(HTMLRenderer):
         """Renders raw blocks verbatim, handling potential special cases."""
         if getattr(token, 'is_self_closing', False): # Check flag from parser
             return f"<{token.tag_name}{self._render_attrs(token.attrs)} />"
-
-        # Specific handling for certain raw tags
+        
         if token.tag_name in ('fasthtml', 'ft'):
             # Execute FastHTML code
             try:
@@ -115,8 +111,7 @@ class PyxieRenderer(HTMLRenderer):
                 logger.error(f"Failed to render style: {e}")
                 return f'<div class="error">Error: {e}</div>'
 
-        else:
-            # Default for other raw tags (like pre, code if added to RAW_BLOCK_TAGS)
+        else:            
             # Raw content should not be escaped
             try:
                 return f"<{token.tag_name}{self._render_attrs(token.attrs)}>{token.content}</{token.tag_name}>"
@@ -160,8 +155,7 @@ class PyxieRenderer(HTMLRenderer):
 
 
     def _make_id(self, text: str) -> str:
-        """Generate a unique ID from heading text."""
-        # Consider using a more robust slugify library if needed
+        """Generate a unique ID from heading text."""        
         base_id = re.sub(r'<[^>]+>', '', text) # Strip tags first
         base_id = re.sub(r'[^\w\s-]', '', base_id.lower()).strip()
         base_id = re.sub(r'[-\s]+', '-', base_id) or 'section'
@@ -175,8 +169,7 @@ class PyxieRenderer(HTMLRenderer):
 
     def render_heading(self, token) -> str:
         """Render heading with automatic ID generation."""
-        inner = self.render_inner(token)
-        # Use the generated ID
+        inner = self.render_inner(token)        
         heading_id = self._make_id(inner)
         return f'<h{token.level} id="{heading_id}">{inner}</h{token.level}>'
 
@@ -211,8 +204,7 @@ def render_content(
     """
     module_name = "Renderer"
     operation_name = "render_content"
-    file_path = getattr(item, 'source_path', None)
-    log(logger, module_name, "info", operation_name, f"Starting for item: {file_path or 'N/A'}", file_path=file_path)
+    file_path = getattr(item, 'source_path', None)    
 
     try:        
         # 1. Get Layout HTML
@@ -228,19 +220,16 @@ def render_content(
         # 2. Prepare Content & Render Fragment
         rendered_fragment = ""
         if item.content and item.content.strip():
-            log(logger, module_name, "debug", operation_name, "Preparing Mistletoe render...", file_path=file_path)
-            # Define the custom tokens needed for parsing
+            log(logger, module_name, "debug", operation_name, "Preparing Mistletoe render...", file_path=file_path)            
             custom_tokens_for_parsing = [RawBlockToken, NestedContentToken]
             log(logger, module_name, "debug", operation_name, f"Using custom tokens: {[t.__name__ for t in custom_tokens_for_parsing]}", file_path=file_path)
 
             with PyxieRenderer(*custom_tokens_for_parsing) as renderer:
-                try:                    
-                    # Pass raw content string directly to Document
+                try:                                        
                     doc = Document(item.content)
                     rendered_fragment = renderer.render(doc)
                     log(logger, module_name, "debug", operation_name, "Successfully rendered Markdown to fragment.", file_path=file_path)
-                except Exception as parse_render_err:
-                    # Log the full traceback for debugging
+                except Exception as parse_render_err:                    
                     logger.error("Error during Mistletoe parsing/rendering", exc_info=True)
                     rendered_fragment = format_error_html(parse_render_err, "Content Rendering")
         else:
@@ -252,8 +241,7 @@ def render_content(
             layout_html=layout_html,
             rendered_html=rendered_fragment,
             context=item.metadata,
-        )
-        log(logger, module_name, "info", operation_name, "Layout processing completed.", file_path=file_path)
+        )        
         return final_html_fragment
 
     except LayoutNotFoundError as e:

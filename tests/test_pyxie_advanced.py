@@ -91,13 +91,11 @@ def test_invalidate_cache_error_handling(pyxie_instance, test_collection):
     """Test error handling in cache invalidation."""
     # Test with IOError
     with patch.object(pyxie_instance.cache, 'invalidate', side_effect=IOError("Test error")):
-        pyxie_instance.invalidate_cache("test")
-        # Should not raise exception
-    
-    # Test with OSError
-    with patch.object(pyxie_instance.cache, 'invalidate', side_effect=OSError("Test error")):
-        pyxie_instance.invalidate_cache("test")
-        # Should not raise exception
+        # The error should be caught and logged, not raised
+        pyxie_instance.invalidate_cache()
+        # Test with specific collection
+        pyxie_instance.invalidate_cache(collection="content")
+        # No exception should be raised
 
 def test_get_raw_content_error_handling(pyxie_instance, test_collection):
     """Test error handling in get_raw_content."""
