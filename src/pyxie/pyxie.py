@@ -325,12 +325,13 @@ class Pyxie:
             async def dispatch(self, request, call_next):
                 if not request.url.path.endswith('.md'):
                     return await call_next(request)
-                    
-                path_parts = request.url.path[:-3].split('/')
-                if not path_parts:
-                    return await call_next(request)
+                                    
+                slug = request.url.path.rstrip('/').split('/')[-1][:-3]
+                if '#' in slug:
+                    slug = slug.split('#')[0]
+                if '?' in slug:
+                    slug = slug.split('?')[0]
                 
-                slug = path_parts[-1]
                 if raw_content := self.pyxie.get_raw_content(slug):
                     return Response(content=raw_content, media_type="text/markdown")
                 
