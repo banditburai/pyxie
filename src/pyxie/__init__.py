@@ -30,7 +30,7 @@ from .errors import (
 from .renderer import render_content
 from .collection import Collection
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 # Add html property and render method to ContentItem
 # This avoids circular imports while keeping the API clean
