@@ -30,7 +30,7 @@ jobs:
         env:
           BUMPVERSION_TAG: "true"
         with:
-          args: ${{ inputs.bump-type }} --commit --tag
+          args: ${{ inputs.bump-type }} --commit --tag --config-file pyproject.toml
           github-token: ${{ secrets.GH_TOKEN }}
 
       - name: Check bump result
